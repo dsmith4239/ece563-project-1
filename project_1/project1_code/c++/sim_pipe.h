@@ -14,7 +14,7 @@ using namespace std;
 #define NUM_OPCODES 16 
 #define NUM_STAGES 5
 
-typedef enum {PC, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
+typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
 
 typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP} opcode_t;
 
@@ -32,6 +32,10 @@ typedef struct{
 class sim_pipe{
 
 	/* Add the data members required by your simulator's implementation here */
+
+        // gp and sp registers (unsigned)
+        unsigned gp_registers[NUM_GP_REGISTERS]; //
+        unsigned sp_registers[NUM_SP_REGISTERS]; // sp_registers[PC] holds pc value
 
         //instruction memory 
         instruction_t instr_memory[PROGRAM_SIZE];

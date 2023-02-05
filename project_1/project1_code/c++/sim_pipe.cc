@@ -239,9 +239,18 @@ sim_pipe::~sim_pipe(){
 /* body of the simulator */
 void sim_pipe::run(unsigned cycles){
 }
-	
-/* reset the state of the pipeline simulator */
+
+//resets the state of the simulator
+/* Note:
+- registers should be reset to UNDEFINED value
+- data memory should be reset to all 0xFF values
+*/
 void sim_pipe::reset(){
+    //data_memory = new unsigned char[data_memory_size];
+    //registers?
+    for(int i = 0; i < data_memory_size; i++) data_memory[i] = 0xFF;
+    for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers = UNDEFINED;
+    for(int i = 0; i < NUM_GP_REGISTERS; i++) gp_registers = UNDEFINED;
 }
 
 //return value of special purpose register
