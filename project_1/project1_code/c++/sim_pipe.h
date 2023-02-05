@@ -34,8 +34,8 @@ class sim_pipe{
 	/* Add the data members required by your simulator's implementation here */
 
         // gp and sp registers (unsigned)
-        unsigned gp_registers[NUM_GP_REGISTERS]; //
-        unsigned sp_registers[NUM_SP_REGISTERS]; // sp_registers[PC] holds pc value
+        int gp_registers[NUM_GP_REGISTERS]; //
+        unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // sp_registers[IF][PC] holds pc value
 
         //instruction memory 
         instruction_t instr_memory[PROGRAM_SIZE];
@@ -51,6 +51,10 @@ class sim_pipe{
 	
 	//memory latency in clock cycles
 	unsigned data_memory_latency;
+
+    unsigned current_cycle;
+    unsigned instructions_executed;
+    unsigned stalls;
 
 public:
 

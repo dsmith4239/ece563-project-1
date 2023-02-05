@@ -247,7 +247,6 @@ void sim_pipe::run(unsigned cycles){
 */
 void sim_pipe::reset(){
     //data_memory = new unsigned char[data_memory_size];
-    //registers?
     for(int i = 0; i < data_memory_size; i++) data_memory[i] = 0xFF;
     for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers = UNDEFINED;
     for(int i = 0; i < NUM_GP_REGISTERS; i++) gp_registers = UNDEFINED;
@@ -255,30 +254,31 @@ void sim_pipe::reset(){
 
 //return value of special purpose register
 unsigned sim_pipe::get_sp_register(sp_register_t reg, stage_t s){
-	return 0; //please modify
+	return sp_registers[s][reg]; //please modify
 }
 
 //returns value of general purpose register
 int sim_pipe::get_gp_register(unsigned reg){
-	return 0; //please modify
+	return gp_registers[reg]; //please modify
 }
 
 void sim_pipe::set_gp_register(unsigned reg, int value){
+    gp_registers[reg] = value;
 }
 
 float sim_pipe::get_IPC(){
-        return 0; //please modify
+        return instructions_executed / (float)current_cycle; //please modify
 }
 
 unsigned sim_pipe::get_instructions_executed(){
-        return 0; //please modify
+        return instructions_executed; //please modify
 }
 
 unsigned sim_pipe::get_stalls(){
-        return 0; //please modify
+        return stalls; //please modify
 }
 
 unsigned sim_pipe::get_clock_cycles(){
-        return 0; //please modify
+        return current_cycle; //please modify
 }
 
