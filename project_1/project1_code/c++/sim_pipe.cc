@@ -248,8 +248,11 @@ void sim_pipe::run(unsigned cycles){
 void sim_pipe::reset(){
     //data_memory = new unsigned char[data_memory_size];
     for(int i = 0; i < data_memory_size; i++) data_memory[i] = 0xFF;
-    for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers = UNDEFINED;
-    for(int i = 0; i < NUM_GP_REGISTERS; i++) gp_registers = UNDEFINED;
+    for(int i = 0; i < NUM_STAGES; i++){
+        for(int j = 0; j < NUM_SP_REGISTERS j++)
+        sp_registers[i][j] = UNDEFINED;
+    }
+    for(int i = 0; i < NUM_GP_REGISTERS; i++) gp_registers[i] = UNDEFINED;
 }
 
 //return value of special purpose register
