@@ -254,6 +254,7 @@ void sim_pipe::run(unsigned cycles){
     while((cycles != 0 && current_cycle < cycles) or (cycles == 0){// && instruction is not eop)
         // during each cycle:
         current_cycle++;
+        ;
         // operations in current pipeline are completed starting at en
         // MEM/WB is written back (if necessary)
         // EX/MEM (memory operations)
