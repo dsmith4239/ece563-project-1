@@ -238,6 +238,30 @@ sim_pipe::~sim_pipe(){
 
 /* body of the simulator */
 void sim_pipe::run(unsigned cycles){
+    //if cycles = 0, run until EOP
+    // or for each cycle
+
+    /*
+    data_memory = new unsigned char[data_memory_size];
+    data_memory_latency = mem_latency;
+
+    int gp_registers[NUM_GP_REGISTERS]; //
+    unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // sp_registers[IF][PC] holds pc value
+
+    //instruction memory
+    instruction_t instr_memory[PROGRAM_SIZE];
+    */
+    while((cycles != 0 && current_cycle < cycles) or (cycles == 0){// && instruction is not eop)
+        // during each cycle:
+        current_cycle++;
+        // operations in current pipeline are completed starting at en
+        // MEM/WB is written back (if necessary)
+        // EX/MEM (memory operations)
+        // ID/EX (execute)
+        // IF/ID (decode instruction currently in this register)
+        // Fetch next instruction
+
+    }
 }
 
 //resets the state of the simulator
