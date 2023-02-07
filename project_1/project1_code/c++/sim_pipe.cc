@@ -239,7 +239,9 @@ sim_pipe::~sim_pipe(){
 /* body of the simulator */
 void sim_pipe::run(unsigned cycles){
     //if cycles = 0, run until EOP
-    // or for each cycle
+    // or for each cycle ...
+	// PC = 0 first
+	sp_registers[IF][PC] = 0;
 
     /*
     data_memory = new unsigned char[data_memory_size];
@@ -251,16 +253,34 @@ void sim_pipe::run(unsigned cycles){
     //instruction memory
     instruction_t instr_memory[PROGRAM_SIZE];
     */
-    while((cycles != 0 && current_cycle < cycles) or (cycles == 0){// && instruction is not eop)
+    while((cycles != 0 && current_cycle < cycles) or (cycles == 0)){// && instruction is not eop)
         // during each cycle:
         current_cycle++;
         ;
-        // operations in current pipeline are completed starting at en
+        
         // MEM/WB is written back (if necessary)
+			// if ALU: regs[destination] = ALU output (sp_registers[WB][ALU_OUTPUT])
+			// if ALU with immediate: regs[rt] = ALU output (sp_registers[WB][ALU_OUTPUT])
+			// if load: regs[rt] = LMD (load memory data) (sp_registers[WB][LMD])
         // EX/MEM (memory operations)
+			// PC = NPC
+			// If load: LMD = Mem[ALU output]
+			// If store: Mem[ALU output] = B
         // ID/EX (execute)
+			// If ALU: ALU out = A op B
+			// If ALU(Imm): ALU out = A op Imm
+			// If memory reference: ALU out = A + Imm
+			// Else (if branch) ALU out = NPC + (Imm << 2)
+			// Cond = (A == 0)
         // IF/ID (decode instruction currently in this register)
-        // Fetch next instruction
+			// A = regs[rs]
+			// B = regs[rt]
+			// Imm = sign-extended IR
+        // Fetch next instruction (initialize all other registers to UNDEFINED except PC)
+			// IR = Mem[PC] (sp_registers[IF][IR])
+			// NPC = PC + 4 (sp_registers[IF][NPC])
+			sp_registers[IF][IR] = instr_memory[PC]; // make IR array instruction type?
+			sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
 
     }
 }
