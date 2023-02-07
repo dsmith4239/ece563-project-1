@@ -35,7 +35,11 @@ class sim_pipe{
 
         // gp and sp registers (unsigned)
         int gp_registers[NUM_GP_REGISTERS]; //
-        unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // sp_registers[IF][PC] holds pc value
+        unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // sp_registers[IF]][PC] holds pc value (beginning/end stage)
+															 // other registers are noted by the stage they feed into:
+															 // stage between EX and MEM is sp_registers[MEM]
+															 // stage between ID/EX is sp_registers[EX]
+															 // if a SPR is unused by an instruction, it should be set to undefined
 
         //instruction memory 
         instruction_t instr_memory[PROGRAM_SIZE];
