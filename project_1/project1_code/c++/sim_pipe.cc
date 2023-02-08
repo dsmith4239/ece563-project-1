@@ -237,7 +237,7 @@ sim_pipe::~sim_pipe(){
 
 
 /* body of the simulator */
-void sim_pipe::run(unsigned cycles){
+void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER ORDERING IN INSTRUCTION (RS/RT/RD)
     //if cycles = 0, run until EOP
     // or for each cycle ...
 	// PC = 0 first
@@ -259,28 +259,117 @@ void sim_pipe::run(unsigned cycles){
         ;
         
         // MEM/WB is written back (if necessary)
-			// if ALU: regs[destination] = ALU output (sp_registers[WB][ALU_OUTPUT])
-			// if ALU with immediate: regs[rt] = ALU output (sp_registers[WB][ALU_OUTPUT])
-			// if load: regs[rt] = LMD (load memory data) (sp_registers[WB][LMD])
+			IR[WB] = IR[MEM];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[WB][i] = sp_registers[MEM][i];
+			switch(IR[WB].opcode){
+				// if ALU: regs[destination] = ALU output (sp_registers[WB][ALU_OUTPUT])
+				case ADD:set_gp_register(IR[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				case SUB:set_gp_register(IR[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				case XOR:set_gp_register(IR[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				// if ALU with immediate: regs[rt] = ALU output (sp_registers[WB][ALU_OUTPUT])
+				case ADDI:set_gp_register(IR[WB].src2,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				case SUBI:set_gp_register(IR[WB].src2,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				// if load: regs[rt] = LMD (load memory data) (sp_registers[WB][LMD])
+				case LW: set_gp_register(IR[WB].src2,sp_registers[WB][LMD]);
+				break;
+			}
         // EX/MEM (memory operations)
+			IR[MEM] = IR[EXE];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
 			// PC = NPC
-			// If load: LMD = Mem[ALU output]
-			// If store: Mem[ALU output] = B
+			sp_registers[MEM][PC] = sp_registers[MEM][NPC];
+			switch(IR[MEM].opcode){
+				// If load: LMD = Mem[ALU output]
+				// If store: Mem[ALU output] = B
+				case LW: sp_registers[MEM][LMD] = data_memory[sp_registers[MEM][ALU_OUTPUT]];
+				break;
+				case SW: write_memory(sp_registers[MEM][ALU_OUTPUT],sp_registers[MEM][B]);
+				break;
+			}
         // ID/EX (execute)
+			IR[EXE] = IR[ID];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
+			switch(IR[EXE].opcode){
+				case ADD: 
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][B];
+				break;
+				case SUB:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][B];
+				break;
+				case ADDI:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][IMM];
+				break;
+				case SUBI:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][IMM];
+				break;
+				case LW:
+					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];
+				break;
+				case SW:
+					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];
+				break;
+				case XOR:
+					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] ^ sp_registers[EXE][B];
+				break;
+				case BEQZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] == 0);
+				break;
+				case BNEZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
+				break;
+				case BLTZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] < 0);
+				break;
+				case BGTZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] > 0);
+				break;
+				case BLEZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] <= 0);
+				break;
+				case BGEZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] >= 0);
+				break;
+				case JUMP:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (true);
+				break;
+
+			}
 			// If ALU: ALU out = A op B
 			// If ALU(Imm): ALU out = A op Imm
 			// If memory reference: ALU out = A + Imm
 			// Else (if branch) ALU out = NPC + (Imm << 2)
 			// Cond = (A == 0)
+			
         // IF/ID (decode instruction currently in this register)
+			// pass registers through
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[ID][i] = sp_registers[IF][i];
 			// A = regs[rs]
 			// B = regs[rt]
-			// Imm = sign-extended IR
+			// Imm = (sign-extended) imm field of IR
+			sp_registers[ID][A] = gp_registers[IR[ID].src1];
+			sp_registers[ID][B] = gp_registers[IR[ID].src2];
+			sp_registers[ID][IMM] = IR[ID].immediate;
+			IR[ID] = IR[IF];
         // Fetch next instruction (initialize all other registers to UNDEFINED except PC)
 			// IR = Mem[PC] (sp_registers[IF][IR])
 			// NPC = PC + 4 (sp_registers[IF][NPC])
-			sp_registers[IF][IR] = instr_memory[PC]; // make IR array instruction type?
+			// All other spregs UNDEFINED
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
+			IR[IF] = instr_memory[PC]; // IR array instruction type
 			sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
+
 
     }
 }

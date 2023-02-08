@@ -22,9 +22,9 @@ typedef enum {IF, ID, EXE, MEM, WB} stage_t;
 
 typedef struct{
         opcode_t opcode; //opcode
-        unsigned src1; //first source register in the assembly instruction (for SW, register to be written to memory)
-        unsigned src2; //second source register in the assembly instruction
-        unsigned dest; //destination register
+        unsigned src1; //first source register in the assembly instruction (for SW, register to be written to memory) (rs)
+        unsigned src2; //second source register in the assembly instruction (rt)
+        unsigned dest; //destination register (rd)
         unsigned immediate; //immediate field
         string label; //for conditional branches, label of the target instruction - used only for parsing/debugging purposes
 } instruction_t;
@@ -34,9 +34,13 @@ class sim_pipe{
 	/* Add the data members required by your simulator's implementation here */
 
         // gp and sp registers (unsigned)
-        int gp_registers[NUM_GP_REGISTERS]; //
-        unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // sp_registers[IF]][PC] holds pc value (beginning/end stage)
-															 // other registers are noted by the stage they feed into:
+        int gp_registers[NUM_GP_REGISTERS];
+		instruction_t IR[NUM_STAGES];				 // holds IRs: IR[IF] points to next instruction to be fetched
+															 // all others correspond to stage they feed into: IR[MEM] holds IR pipeline register at entrance to MEM stage
+        unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // IR is unused - needs to hold whole instruction
+															 // get_sp_register needs to be altered to get correct value from IR array
+															 // sp_registers[IF]][PC] holds pc value (beginning/end stage)
+															 // other registers correspond to stage they feed into:
 															 // stage between EX and MEM is sp_registers[MEM]
 															 // stage between ID/EX is sp_registers[EX]
 															 // if a SPR is unused by an instruction, it should be set to undefined
