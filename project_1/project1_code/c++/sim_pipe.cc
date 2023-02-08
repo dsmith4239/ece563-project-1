@@ -238,7 +238,7 @@ sim_pipe::~sim_pipe(){
 
 /* body of the simulator */
 void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER ORDERING IN INSTRUCTION (RS/RT/RD)
-    cout << "AAA";
+    cout << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nAAAAAAAAAAAAAAAAAAAA\nAAAAAAAAAAAAAAAAAAAAAAAA\nAAAAAAAAAAAAAAAAaAAA";
 	//if cycles = 0, run until EOP
     // or for each cycle ...
 	// PC = 0 first(?)

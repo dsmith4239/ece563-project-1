@@ -14,7 +14,7 @@ using namespace std;
 
 #define UNDEFINED 0xFFFFFFFF //used to initialize the registers
 #define NUM_SP_REGISTERS 9
-#define NUM_GP_REGISTERS 32
+#define NUM_GP_REGISTERS 7 // changed from 32
 #define NUM_OPCODES 16 
 #define NUM_STAGES 5
 
@@ -70,9 +70,9 @@ class sim_pipe{
 	//memory latency in clock cycles
 	unsigned data_memory_latency;
 
-    unsigned current_cycle;
-    unsigned instructions_executed;
-    unsigned stalls;
+    unsigned current_cycle = 0;
+    unsigned instructions_executed = 0;
+    unsigned stalls = 0;
 
 public:
 
@@ -367,9 +367,8 @@ sim_pipe::~sim_pipe(){
 void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER ORDERING IN INSTRUCTION (RS/RT/RD)
     //if cycles = 0, run until EOP
     // or for each cycle ...
-	// PC = 0 first(?)
-	sp_registers[IF][PC] = 0;
-
+	for(int i = 0; i < NUM_STAGES -1; i++) sp_registers[i][PC] = 0;//instr_base_address;
+	sp_registers[WB][PC] = -1;
     /*
     data_memory = new unsigned char[data_memory_size];
     data_memory_latency = mem_latency;
@@ -496,9 +495,9 @@ void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER
 			unsigned next_PC = sp_registers[WB][PC];
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
 			sp_registers[IF][PC] = next_PC;
-			IReg[IF] = instr_memory[sp_registers[IF][PC]]; // IR array instruction type
+			IReg[IF] = instr_memory[sp_registers[IF][PC]+ 1]; // IR array instruction type
 			
-			sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
+			//sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
 
 
     } // exits once current_cycle > cycles
@@ -563,7 +562,7 @@ unsigned sim_pipe::get_clock_cycles(){
 /* DO NOT MODIFY */
 
 int main(int argc, char **argv){
-
+	cout << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 	unsigned i, j;
 
 	// instantiates the sim_pipe with a 1MB data memory
