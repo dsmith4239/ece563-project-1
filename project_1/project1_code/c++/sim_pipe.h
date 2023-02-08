@@ -35,7 +35,7 @@ class sim_pipe{
 
         // gp and sp registers (unsigned)
         int gp_registers[NUM_GP_REGISTERS];
-		instruction_t IR[NUM_STAGES];				 // holds IRs: IR[IF] points to next instruction to be fetched
+		instruction_t IReg[NUM_STAGES];				 // holds IRs: IR[IF] points to next instruction to be fetched
 															 // all others correspond to stage they feed into: IR[MEM] holds IR pipeline register at entrance to MEM stage
         unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // IR is unused - needs to hold whole instruction
 															 // get_sp_register needs to be altered to get correct value from IR array
