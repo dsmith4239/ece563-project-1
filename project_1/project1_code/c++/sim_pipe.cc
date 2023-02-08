@@ -390,6 +390,11 @@ void sim_pipe::reset(){
         for(int j = 0; j < NUM_SP_REGISTERS; j++)
         sp_registers[i][j] = UNDEFINED;
     }
+	/*sp_registers[ID][PC] = 3;
+	sp_registers[EXE][PC] = 2;
+	sp_registers[MEM][PC] = 1;
+	sp_registers[IF][PC] = 0;
+	sp_registers[WB][PC] = -1;*/
 	instruction_t null_inst;
 	null_inst.dest = 0;
 	null_inst.src1 = 0;
