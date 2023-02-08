@@ -1,4 +1,3 @@
-#include "sim_pipe.h"
 #include <stdlib.h>
 #include <iostream>
 #include <fstream>
@@ -11,10 +10,138 @@
 
 using namespace std;
 
+#define PROGRAM_SIZE 50
+
+#define UNDEFINED 0xFFFFFFFF //used to initialize the registers
+#define NUM_SP_REGISTERS 9
+#define NUM_GP_REGISTERS 32
+#define NUM_OPCODES 16 
+#define NUM_STAGES 5
+
+typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
+
+typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP} opcode_t;
+
+typedef enum {IF, ID, EXE, MEM, WB} stage_t;
+
+typedef struct{
+        opcode_t opcode; //opcode
+        unsigned src1; //first source register in the assembly instruction (for SW, register to be written to memory) (rs)
+        unsigned src2; //second source register in the assembly instruction (rt)
+        unsigned dest; //destination register (rd)
+        unsigned immediate; //immediate field
+        string label; //for conditional branches, label of the target instruction - used only for parsing/debugging purposes
+} instruction_t;
+
 //used for debugging purposes
 static const char *reg_names[NUM_SP_REGISTERS] = {"PC", "NPC", "IR", "A", "B", "IMM", "COND", "ALU_OUTPUT", "LMD"};
 static const char *stage_names[NUM_STAGES] = {"IF", "ID", "EX", "MEM", "WB"};
 static const char *instr_names[NUM_OPCODES] = {"LW", "SW", "ADD", "ADDI", "SUB", "SUBI", "XOR", "BEQZ", "BNEZ", "BLTZ", "BGTZ", "BLEZ", "BGEZ", "JUMP", "EOP", "NOP"};
+
+
+class sim_pipe{
+
+	/* Add the data members required by your simulator's implementation here */
+
+        // gp and sp registers (unsigned)
+        int gp_registers[NUM_GP_REGISTERS];
+		instruction_t IReg[NUM_STAGES];				 // holds IRs: IR[IF] points to next instruction to be fetched
+															 // all others correspond to stage they feed into: IR[MEM] holds IR pipeline register at entrance to MEM stage
+        unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // IR is unused - needs to hold whole instruction
+															 // get_sp_register needs to be altered to get correct value from IR array
+															 // sp_registers[IF]][PC] holds pc value (beginning/end stage)
+															 // other registers correspond to stage they feed into:
+															 // stage between EX and MEM is sp_registers[MEM]
+															 // stage between ID/EX is sp_registers[EX]
+															 // if a SPR is unused by an instruction, it should be set to undefined
+
+        //instruction memory 
+        instruction_t instr_memory[PROGRAM_SIZE];
+
+        //base address in the instruction memory where the program is loaded
+        unsigned instr_base_address;
+
+	//data memory - should be initialize to all 0xFF
+	unsigned char *data_memory;
+
+	//memory size in bytes
+	unsigned data_memory_size;
+	
+	//memory latency in clock cycles
+	unsigned data_memory_latency;
+
+    unsigned current_cycle;
+    unsigned instructions_executed;
+    unsigned stalls;
+
+public:
+
+	//instantiates the simulator with a data memory of given size (in bytes) and latency (in clock cycles)
+	/* Note: 
+           - initialize the registers to UNDEFINED value 
+	   - initialize the data memory to all 0xFF values
+	*/
+	sim_pipe(unsigned data_mem_size, unsigned data_mem_latency);
+	
+	//de-allocates the simulator
+	~sim_pipe();
+
+	//loads the assembly program in file "filename" in instruction memory at the specified address
+	void load_program(const char *filename, unsigned base_address=0x0);
+
+	//runs the simulator for "cycles" clock cycles (run the program to completion if cycles=0) 
+	void run(unsigned cycles=0);
+	
+	//resets the state of the simulator
+        /* Note: 
+	   - registers should be reset to UNDEFINED value 
+	   - data memory should be reset to all 0xFF values
+	*/
+	void reset();
+
+	// returns value of the specified special purpose register for a given stage (at the "entrance" of that stage)
+        // if that special purpose register is not used in that stage, returns UNDEFINED
+        //
+        // Examples (refer to page C-37 in the 5th edition textbook, A-32 in 4th edition of textbook)::
+        // - get_sp_register(PC, IF) returns the value of PC
+        // - get_sp_register(NPC, ID) returns the value of IF/ID.NPC
+        // - get_sp_register(NPC, EX) returns the value of ID/EX.NPC
+        // - get_sp_register(ALU_OUTPUT, MEM) returns the value of EX/MEM.ALU_OUTPUT
+        // - get_sp_register(ALU_OUTPUT, WB) returns the value of MEM/WB.ALU_OUTPUT
+	// - get_sp_register(LMD, ID) returns UNDEFINED
+	/* Note: you are allowed to use a custom format for the IR register.
+           Therefore, the test cases won't check the value of IR using this method. 
+	   You can add an extra method to retrieve the content of IR */
+	unsigned get_sp_register(sp_register_t reg, stage_t stage);
+
+	//returns value of the specified general purpose register
+	int get_gp_register(unsigned reg);
+
+	// set the value of the given general purpose register to "value"
+	void set_gp_register(unsigned reg, int value);
+
+	//returns the IPC
+	float get_IPC();
+
+	//returns the number of instructions fully executed
+	unsigned get_instructions_executed();
+
+	//returns the number of clock cycles 
+	unsigned get_clock_cycles();
+
+	//returns the number of stalls added by processor
+	unsigned get_stalls();
+
+	//prints the content of the data memory within the specified address range
+	void print_memory(unsigned start_address, unsigned end_address);
+
+	// writes an integer value to data memory at the specified address (use little-endian format: https://en.wikipedia.org/wiki/Endianness)
+	void write_memory(unsigned address, unsigned value);
+
+	//prints the values of the registers 
+	void print_registers();
+
+};
 
 /* =============================================================
 
@@ -238,8 +365,7 @@ sim_pipe::~sim_pipe(){
 
 /* body of the simulator */
 void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER ORDERING IN INSTRUCTION (RS/RT/RD)
-    cout << "AAA";
-	//if cycles = 0, run until EOP
+    //if cycles = 0, run until EOP
     // or for each cycle ...
 	// PC = 0 first(?)
 	sp_registers[IF][PC] = 0;
@@ -431,3 +557,68 @@ unsigned sim_pipe::get_clock_cycles(){
         return current_cycle; //please modify
 }
 
+
+
+/* Test case for pipelined simuator */ 
+/* DO NOT MODIFY */
+
+int main(int argc, char **argv){
+
+	unsigned i, j;
+
+	// instantiates the sim_pipe with a 1MB data memory
+	sim_pipe *mips = new sim_pipe(1024*1024, 0);
+
+	//loads program in instruction memory at address 0x10000000
+	 mips->load_program("C:/Users/Smith/Desktop/NCSU/spring 23/ECE563/project/ece563-project-1/project_1/project1_code/c++/asm/no_dep.asm", 0x10000000);
+
+	//initialize general purpose registers
+	for (i=0; i<7; i++) mips->set_gp_register(i,i);
+
+	//initialize data memory and prints its content (for the specified address ranges)
+	for (i = 0x0, j=10; i<0x20; i+=4, j+=10) mips->write_memory(i,j);
+	
+	cout << "\nBEFORE PROGRAM EXECUTION..." << endl;
+	cout << "======================================================================" << endl << endl;
+	
+	//prints the value of the memory and registers
+	mips->print_registers();
+	mips->print_memory(0x0, 0x20);
+
+	// executes the program	
+	cout << "\n*****************************" << endl;
+	cout << "STARTING THE PROGRAM..." << endl;
+	cout << "*****************************" << endl << endl;
+
+	// first 8 clock cycles
+	cout << "First 8 clock cycles: inspecting the registers at each clock cycle..." << endl;
+	cout << "======================================================================" << endl << endl;
+
+	for (i=0; i<8; i++){
+		cout << "CLOCK CYCLE #" << dec << i << endl;
+		mips->run(1);
+		mips->print_registers();
+		cout << endl;
+	}
+
+	// runs program to completion
+	cout << "EXECUTING PROGRAM TO COMPLETION..." << endl << endl;
+	mips->run(); 
+
+	cout << "PROGRAM TERMINATED\n";
+	cout << "===================" << endl << endl;
+
+	//prints the value of registers and data memory
+	mips->print_registers();
+	mips->print_memory(0x0, 0x20);
+	
+	cout << endl;
+
+	// prints the number of instructions executed and IPC
+	cout << "Instruction executed = " << dec << mips->get_instructions_executed() << endl;
+	cout << "Clock cycles = " << dec << mips->get_clock_cycles() << endl;
+	cout << "Stall inserted = " << dec  << mips->get_stalls() << endl;
+	cout << "IPC = " << dec << mips->get_IPC() << endl;
+
+	delete mips;
+}
