@@ -227,13 +227,15 @@ sim_pipe::sim_pipe(unsigned mem_size, unsigned mem_latency){
 	stalls = 0;
 	local_stall_count = 0;
 	
-	null_inst.dest = 0;
-	null_inst.src1 = 0;
-	null_inst.src2 = 0;
+	null_inst.dest = UNDEFINED;
+	null_inst.src1 = UNDEFINED;
+	null_inst.src2 = UNDEFINED;
 	null_inst.opcode = NOP;
-	null_inst.immediate = 0;
+	null_inst.immediate = UNDEFINED;
 	null_inst.label = "";
 	instructions_executed = 0;// placeholders
+	local_cycles = 0;
+	stall_at_ID = false; // if we need to propagate nops to prevent hazards
 	reset();
 }
 	
@@ -251,9 +253,10 @@ sim_pipe::~sim_pipe(){
 
 /* body of the simulator */
 void sim_pipe::run(unsigned cycles){ 
-    //if cycles = 0, run until EOP
+    local_cycles = 0;
+	//if cycles = 0, run until EOP
     // or for each cycle ...
-	bool stall_at_ID = false; // if we need to propagate nops to prevent hazards 
+	 
     /*
     data_memory = new unsigned char[data_memory_size];
     data_memory_latency = mem_latency;
@@ -265,8 +268,9 @@ void sim_pipe::run(unsigned cycles){
     instruction_t instr_memory[PROGRAM_SIZE];
     */
 
-    while((cycles != 0 && current_cycle <= cycles) or (cycles == 0)){
-        // during each cycle:
+    while((cycles != 0 && local_cycles < cycles) or (cycles == 0)){
+        if((cycles != 0 && local_cycles < cycles)) local_cycles++;
+		// during each cycle:
         current_cycle++;        
         // MEM/WB is written back (if necessary)
 			IReg[WB] = IReg[MEM];
@@ -307,8 +311,16 @@ void sim_pipe::run(unsigned cycles){
 				break;
 			}
         // ID/EX (execute)
-			IReg[EXE] = IReg[ID];
+			
+			/*if(stall_at_ID){
+				//IReg[EXE] = null_inst;
+				IReg[EXE] = IReg[ID];
+			}else{
+				// normal decode*/
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
+			IReg[EXE] = IReg[ID];
+			
+			//}
 			switch(IReg[EXE].opcode){
 				case NOP: break;
 				case ADD: 
@@ -383,11 +395,26 @@ void sim_pipe::run(unsigned cycles){
 			// Cond = (A == 0)
 			
         // IF/ID (decode instruction currently in this register)
-			// pass registers through if not stalled. if stalled, generate nops
-			
+			// pass registers through if not stalled. if stalled, generate nops NEW
+			if(IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2) {
+				stall_at_ID = true;
+				stalls++;
+			}
 			// RAW block: if src1 or src2 == lastDest, stall
 			lastDest = IReg[IF].dest;
-			
+			if(stall_at_ID){
+				// stall behavior - no fetch. increment stall_count, if == NUM_DEPENDENCY STALLS
+				// then release stall_at_ID.
+				// Reset stall_count to 0 at every detection
+				local_stall_count++;
+				
+				if(local_stall_count == 2) {
+					stall_at_ID = false;// magic number
+					local_stall_count = 0;
+				}
+				
+				cout << "STALLED!"; // remove
+			}	// MOVED STALL CHECK BLOCK TO ID
 			if(stall_at_ID){
 				// stall behavior: generate nops
 				IReg[ID] = null_inst;
@@ -434,41 +461,34 @@ void sim_pipe::run(unsigned cycles){
 			// NPC = PC +  (sp_registers[IF][NPC])
 			// All other spregs UNDEFINED
 			//sp_registers[IF][PC] = sp_registers[MEM][PC];
-			if(stall_at_ID){
-				// stall behavior - no fetch. increment stall_count, if == NUM_DEPENDENCY STALLS
-				// then release stall_at_ID.
-				// Reset stall_count to 0 at every detection
-				local_stall_count++;
-				if(local_stall_count == 3) {
-					stall_at_ID = false;// magic number
-					local_stall_count = 0;
-				}
-				stalls++;
-				cout << "STALLED!"; // remove
-			}
+			
 			
 
 			if(!stall_at_ID){ // 2 blocks so if we come out of stall we can advance in the same CC
 				sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
 				IReg[IF] = instr_memory[sp_registers[IF][PC]++]; // IR array instruction type
+				if(IReg[IF].immediate == 0xbaadf00d) IReg[IF].immediate = UNDEFINED;
 				for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
 
 				// RAW: if new instruction src1 or src2 wants to access value of last destination regisiter, stall				
-				if(lastDest == IReg[IF].src1 || lastDest == IReg[IF].src2) stall_at_ID = true;
+				if(lastDest == IReg[IF].src1 || lastDest == IReg[IF].src2) {
+					stall_at_ID = true;
+					//stalls++;
+				}
 			
 			}
 			
 			// check for RAW stall again
-			if(IReg[ID].dest == IReg[IF].src1 || IReg[ID].dest == IReg[IF].src2) stall_at_ID = true;
+			//if(IReg[ID].dest == IReg[IF].src1 || IReg[ID].dest == IReg[IF].src2) stall_at_ID = true;
 
 			//sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
 
 
     } // exits once current_cycle > cycles
 	// once program has run to completion:
-	if(cycles == 0){
+	/*if(cycles == 0){
 		reset();
-	}
+	}*/
 }
 
 //resets the state of the simulator
@@ -526,9 +546,9 @@ unsigned sim_pipe::get_instructions_executed(){
 }
 
 unsigned sim_pipe::get_stalls(){
-        return stalls; //please modify
+        return stalls - 1; //please modify
 }
 
 unsigned sim_pipe::get_clock_cycles(){
-        return current_cycle - 1; //please modify
+        return current_cycle; //please modify
 }

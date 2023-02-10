@@ -66,6 +66,8 @@ class sim_pipe{
 	unsigned local_stall_count; // resets to 0 for each hazard
 	instruction_t null_inst;
 	unsigned lastDest; // for RAW hazards
+	bool stall_at_ID;
+	unsigned local_cycles; // for tracking executions in a run(int)
 
 	//instruction_t null_inst;
 	
