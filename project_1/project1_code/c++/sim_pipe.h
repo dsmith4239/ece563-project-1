@@ -10,7 +10,7 @@ using namespace std;
 
 #define UNDEFINED 0xFFFFFFFF //used to initialize the registers
 #define NUM_SP_REGISTERS 9
-#define NUM_GP_REGISTERS 32
+#define NUM_GP_REGISTERS 7
 #define NUM_OPCODES 16 
 #define NUM_STAGES 5
 
@@ -63,6 +63,12 @@ class sim_pipe{
     unsigned current_cycle;
     unsigned instructions_executed;
     unsigned stalls;
+	unsigned local_stall_count; // resets to 0 for each hazard
+	instruction_t null_inst;
+	unsigned lastDest; // for RAW hazards
+
+	//instruction_t null_inst;
+	
 
 public:
 

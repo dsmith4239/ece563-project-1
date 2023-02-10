@@ -224,6 +224,16 @@ sim_pipe::sim_pipe(unsigned mem_size, unsigned mem_latency){
 	data_memory_size = mem_size;
 	data_memory_latency = mem_latency;
 	data_memory = new unsigned char[data_memory_size];
+	stalls = 0;
+	local_stall_count = 0;
+	
+	null_inst.dest = 0;
+	null_inst.src1 = 0;
+	null_inst.src2 = 0;
+	null_inst.opcode = NOP;
+	null_inst.immediate = 0;
+	null_inst.label = "";
+	instructions_executed = 0;// placeholders
 	reset();
 }
 	
@@ -243,7 +253,7 @@ sim_pipe::~sim_pipe(){
 void sim_pipe::run(unsigned cycles){ 
     //if cycles = 0, run until EOP
     // or for each cycle ...
-	
+	bool stall_at_ID = false; // if we need to propagate nops to prevent hazards 
     /*
     data_memory = new unsigned char[data_memory_size];
     data_memory_latency = mem_latency;
@@ -254,7 +264,7 @@ void sim_pipe::run(unsigned cycles){
     //instruction memory
     instruction_t instr_memory[PROGRAM_SIZE];
     */
-   
+
     while((cycles != 0 && current_cycle <= cycles) or (cycles == 0)){
         // during each cycle:
         current_cycle++;        
@@ -300,6 +310,7 @@ void sim_pipe::run(unsigned cycles){
 			IReg[EXE] = IReg[ID];
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
 			switch(IReg[EXE].opcode){
+				case NOP: break;
 				case ADD: 
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][B];
 					instructions_executed++;
@@ -372,9 +383,21 @@ void sim_pipe::run(unsigned cycles){
 			// Cond = (A == 0)
 			
         // IF/ID (decode instruction currently in this register)
-			// pass registers through
+			// pass registers through if not stalled. if stalled, generate nops
+			
+			// RAW block: if src1 or src2 == lastDest, stall
+			lastDest = IReg[IF].dest;
+			
+			if(stall_at_ID){
+				// stall behavior: generate nops
+				IReg[ID] = null_inst;
+			}else{
+				// normal decode
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[ID][i] = sp_registers[IF][i];
 			IReg[ID] = IReg[IF];
+			
+			
+
 			// A = regs[rs]
 			// B = regs[rt]
 			// Imm = (sign-extended) imm field of IR
@@ -405,17 +428,39 @@ void sim_pipe::run(unsigned cycles){
 			}
 			//if(IReg[ID].opcode != SW && IReg[ID].opcode != LW) sp_registers[ID][B] = gp_registers[IReg[ID].src2]; // do not fill if instruction is LW/SW
 			sp_registers[ID][IMM] = IReg[ID].immediate;
-			
+			}
         // Fetch next instruction (initialize all other registers in IF to UNDEFINED except PC)
 			// IR = Mem[PC] (sp_registers[IF][IR])
 			// NPC = PC +  (sp_registers[IF][NPC])
 			// All other spregs UNDEFINED
 			//sp_registers[IF][PC] = sp_registers[MEM][PC];
-			sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
-			IReg[IF] = instr_memory[sp_registers[IF][PC]++]; // IR array instruction type
-			for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
+			if(stall_at_ID){
+				// stall behavior - no fetch. increment stall_count, if == NUM_DEPENDENCY STALLS
+				// then release stall_at_ID.
+				// Reset stall_count to 0 at every detection
+				local_stall_count++;
+				if(local_stall_count == 3) {
+					stall_at_ID = false;// magic number
+					local_stall_count = 0;
+				}
+				stalls++;
+				cout << "STALLED!"; // remove
+			}
 			
+
+			if(!stall_at_ID){ // 2 blocks so if we come out of stall we can advance in the same CC
+				sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
+				IReg[IF] = instr_memory[sp_registers[IF][PC]++]; // IR array instruction type
+				for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
+
+				// RAW: if new instruction src1 or src2 wants to access value of last destination regisiter, stall				
+				if(lastDest == IReg[IF].src1 || lastDest == IReg[IF].src2) stall_at_ID = true;
 			
+			}
+			
+			// check for RAW stall again
+			if(IReg[ID].dest == IReg[IF].src1 || IReg[ID].dest == IReg[IF].src2) stall_at_ID = true;
+
 			//sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
 
 
@@ -452,13 +497,7 @@ void sim_pipe::reset(){
 	sp_registers[EXE][PC] = 0;
 	sp_registers[EXE][NPC] = 1;*/
 	//sp_registers[EXE][NPC] = sp_registers[ID][PC];
-	instruction_t null_inst;
-	null_inst.dest = 0;
-	null_inst.src1 = 0;
-	null_inst.src2 = 0;
-	null_inst.opcode = NOP;
-	null_inst.immediate = 0;
-	null_inst.label = "";
+	
 	for(int i = 0; i < NUM_STAGES; i++) IReg[i] = null_inst;
 	for(int i = 0; i < NUM_GP_REGISTERS; i++) gp_registers[i] = UNDEFINED;
 	current_cycle = 0;
