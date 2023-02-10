@@ -546,6 +546,10 @@ void sim_pipe::run(unsigned cycles){
 
 
     } // exits once current_cycle > cycles
+	// once program has run to completion:
+	if(cycles == 0){
+		reset();
+	}
 }
 
 //resets the state of the simulator

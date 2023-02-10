@@ -8,44 +8,50 @@ using namespace std;
 
 #define PROGRAM_SIZE 50
 
-#define UNDEFINED 0xFFFFFFFF
+#define UNDEFINED 0xFFFFFFFF //used to initialize the registers
 #define NUM_SP_REGISTERS 9
-#define NUM_SP_INT_REGISTERS 15
-#define NUM_GP_REGISTERS 32
-#define NUM_OPCODES 22
+#define NUM_GP_REGISTERS 7 // changed from 32
+#define NUM_OPCODES 16 
 #define NUM_STAGES 5
-#define MAX_UNITS 10
 
-typedef enum {PC, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
+typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
 
-typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP, LWS, SWS, ADDS, SUBS, MULTS, DIVS} opcode_t;
+typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP} opcode_t;
 
 typedef enum {IF, ID, EXE, MEM, WB} stage_t;
 
-typedef enum {INTEGER, ADDER, MULTIPLIER, DIVIDER} exe_unit_t;
+typedef enum {TYPE_R, TYPE_I, TYPE_J, TYPE_NOP} format_t;
 
-// instruction
 typedef struct{
         opcode_t opcode; //opcode
-        unsigned src1; //first source register
-        unsigned src2; //second source register
-        unsigned dest; //destination register
-        unsigned immediate; //immediate field;
-        string label; //in case of branch, label of the target instruction;
+        unsigned src1; //first source register in the assembly instruction (for SW, register to be written to memory) (rs)
+        unsigned src2; //second source register in the assembly instruction (rt)
+        unsigned dest; //destination register (rd)
+        unsigned immediate; //immediate field
+        string label; //for conditional branches, label of the target instruction - used only for parsing/debugging purposes
 } instruction_t;
 
-// execution unit
-typedef struct{
-	exe_unit_t type;  // execution unit type
-	unsigned latency; // execution unit latency
-	unsigned busy;    // 0 if execution unit is free, otherwise number of clock cycles during
-                          // which the execution unit will be busy. It should be initialized
-			  // to the latency of the unit when the unit becomes busy, and decremented
-			  // at each clock cycle
-	instruction_t instruction; // instruction using the functional unit
-} unit_t;
+//used for debugging purposes
+static const char *reg_names[NUM_SP_REGISTERS] = {"PC", "NPC", "IR", "A", "B", "IMM", "COND", "ALU_OUTPUT", "LMD"};
+static const char *stage_names[NUM_STAGES] = {"IF", "ID", "EX", "MEM", "WB"};
+static const char *instr_names[NUM_OPCODES] = {"LW", "SW", "ADD", "ADDI", "SUB", "SUBI", "XOR", "BEQZ", "BNEZ", "BLTZ", "BGTZ", "BLEZ", "BGEZ", "JUMP", "EOP", "NOP"};
 
-class sim_pipe_fp{
+
+class sim_pipe{
+
+	/* Add the data members required by your simulator's implementation here */
+
+        // gp and sp registers (unsigned)
+        int gp_registers[NUM_GP_REGISTERS];
+		instruction_t IReg[NUM_STAGES];				 // holds IRs: IR[IF] points to next instruction to be fetched
+															 // all others correspond to stage they feed into: IR[MEM] holds IR pipeline register at entrance to MEM stage
+        int sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // IR is unused - needs to hold whole instruction
+															 // get_sp_register needs to be altered to get correct value from IR array
+															 // sp_registers[IF]][PC] holds pc value (beginning/end stage)
+															 // other registers correspond to stage they feed into:
+															 // stage between EX and MEM is sp_registers[MEM]
+															 // stage between ID/EX is sp_registers[EX]
+															 // if a SPR is unused by an instruction, it should be set to undefined
 
         //instruction memory 
         instruction_t instr_memory[PROGRAM_SIZE];
@@ -62,9 +68,9 @@ class sim_pipe_fp{
 	//memory latency in clock cycles
 	unsigned data_memory_latency;
 
-	//execution units
-	unit_t exec_units[MAX_UNITS];
-	unsigned num_units;
+    unsigned current_cycle = 0;
+    unsigned instructions_executed = 0;
+    unsigned stalls = 0;
 
 public:
 
@@ -73,16 +79,10 @@ public:
            - initialize the registers to UNDEFINED value 
 	   - initialize the data memory to all 0xFF values
 	*/
-	sim_pipe_fp(unsigned data_mem_size, unsigned data_mem_latency);
+	sim_pipe(unsigned data_mem_size, unsigned data_mem_latency);
 	
 	//de-allocates the simulator
-	~sim_pipe_fp();
-
-	// adds one or more execution units of a given type to the processor
-        // - exec_unit: type of execution unit to be added
-        // - latency: latency of the execution unit (in clock cycles)
-        // - instances: number of execution units of this type to be added
-        void init_exec_unit(exe_unit_t exec_unit, unsigned latency, unsigned instances=1);
+	~sim_pipe();
 
 	//loads the assembly program in file "filename" in instruction memory at the specified address
 	void load_program(const char *filename, unsigned base_address=0x0);
@@ -112,17 +112,11 @@ public:
 	   You can add an extra method to retrieve the content of IR */
 	unsigned get_sp_register(sp_register_t reg, stage_t stage);
 
-        //returns value of the specified integer general purpose register
-        int get_int_register(unsigned reg);
+	//returns value of the specified general purpose register
+	int get_gp_register(unsigned reg);
 
-        //set the value of the given integer general purpose register to "value"
-        void set_int_register(unsigned reg, int value);
-
-        //returns value of the specified floating point general purpose register
-        float get_fp_register(unsigned reg);
-
-        //set the value of the given floating point general purpose register to "value"
-        void set_fp_register(unsigned reg, float value);
+	// set the value of the given general purpose register to "value"
+	void set_gp_register(unsigned reg, int value);
 
 	//returns the IPC
 	float get_IPC();
@@ -144,17 +138,6 @@ public:
 
 	//prints the values of the registers 
 	void print_registers();
-
-private:
-
-	// returns a free exec unit for the particular instruction type
-	unsigned get_free_unit(opcode_t opcode);	
-	
-	//reduce execution unit busy time (to be invoked at every clock cycle 
-	void decrement_units_busy_time();
-
-	//debug units
-	void debug_units();
 
 };
 

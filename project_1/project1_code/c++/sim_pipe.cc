@@ -11,6 +11,8 @@
 
 using namespace std;
 
+typedef enum {TYPE_R, TYPE_I, TYPE_J, TYPE_NOP} format_t;
+
 //used for debugging purposes
 static const char *reg_names[NUM_SP_REGISTERS] = {"PC", "NPC", "IR", "A", "B", "IMM", "COND", "ALU_OUTPUT", "LMD"};
 static const char *stage_names[NUM_STAGES] = {"IF", "ID", "EX", "MEM", "WB"};
@@ -21,6 +23,7 @@ static const char *instr_names[NUM_OPCODES] = {"LW", "SW", "ADD", "ADDI", "SUB",
    HELPER FUNCTIONS
 
    ============================================================= */
+
 
 
 /* converts integer into array of unsigned char - little indian */
@@ -237,13 +240,10 @@ sim_pipe::~sim_pipe(){
 
 
 /* body of the simulator */
-void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER ORDERING IN INSTRUCTION (RS/RT/RD)
-    cout << "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nAAAAAAAAAAAAAAAAAAAA\nAAAAAAAAAAAAAAAAAAAAAAAA\nAAAAAAAAAAAAAAAAaAAA";
-	//if cycles = 0, run until EOP
+void sim_pipe::run(unsigned cycles){ 
+    //if cycles = 0, run until EOP
     // or for each cycle ...
-	// PC = 0 first(?)
-	sp_registers[IF][PC] = 0;
-
+	
     /*
     data_memory = new unsigned char[data_memory_size];
     data_memory_latency = mem_latency;
@@ -254,6 +254,7 @@ void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER
     //instruction memory
     instruction_t instr_memory[PROGRAM_SIZE];
     */
+   
     while((cycles != 0 && current_cycle <= cycles) or (cycles == 0)){
         // during each cycle:
         current_cycle++;        
@@ -271,25 +272,28 @@ void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER
 				case XOR:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
 				break;
 				// if ALU with immediate: regs[rt] = ALU output (sp_registers[WB][ALU_OUTPUT])
-				case ADDI:set_gp_register(IReg[WB].src2,sp_registers[WB][ALU_OUTPUT]);
+				case ADDI:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
 				break;
-				case SUBI:set_gp_register(IReg[WB].src2,sp_registers[WB][ALU_OUTPUT]);
+				case SUBI:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
 				break;
 				// if load: regs[rt] = LMD (load memory data) (sp_registers[WB][LMD])
-				case LW: set_gp_register(IReg[WB].src2,sp_registers[WB][LMD]);
+				case LW: set_gp_register(IReg[WB].dest,sp_registers[WB][LMD]);
 				break;
 			}
+			//instructions_executed++;
         // EX/MEM (memory operations)
 			IReg[MEM] = IReg[EXE];
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
 			// PC = NPC
-			sp_registers[MEM][PC] = sp_registers[MEM][NPC];
+			//sp_registers[IF][PC] = sp_registers[MEM][NPC]; // update PC with propagated value or 
+			if(sp_registers[MEM][COND] == 1) sp_registers[MEM][PC] = sp_registers[MEM][ALU_OUTPUT];
+			else sp_registers[MEM][PC] = sp_registers[MEM][NPC];
 			switch(IReg[MEM].opcode){
 				// If load: LMD = Mem[ALU output]
 				// If store: Mem[ALU output] = B
 				case LW: sp_registers[MEM][LMD] = data_memory[sp_registers[MEM][ALU_OUTPUT]];
 				break;
-				case SW: write_memory(sp_registers[MEM][ALU_OUTPUT],sp_registers[MEM][B]);
+				case SW: write_memory(sp_registers[MEM][ALU_OUTPUT],sp_registers[MEM][A]);
 				break;
 			}
         // ID/EX (execute)
@@ -298,52 +302,66 @@ void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER
 			switch(IReg[EXE].opcode){
 				case ADD: 
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][B];
+					instructions_executed++;
 				break;
 				case SUB:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][B];
+					instructions_executed++;
 				break;
 				case ADDI:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][IMM];
+					instructions_executed++;
 				break;
 				case SUBI:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][IMM];
+					instructions_executed++;
 				break;
 				case LW:
 					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];
+					instructions_executed++;
 				break;
 				case SW:
-					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];
+					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][B] + sp_registers[EXE][IMM];
+					instructions_executed++;
 				break;
 				case XOR:
 					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] ^ sp_registers[EXE][B];
+					instructions_executed++;
 				break;
 				case BEQZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] == 0);
+					instructions_executed++;
 				break;
 				case BNEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
+					instructions_executed++;
 				break;
 				case BLTZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] < 0);
+					instructions_executed++;
 				break;
 				case BGTZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] > 0);
+					instructions_executed++;
 				break;
 				case BLEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] <= 0);
+					instructions_executed++;
 				break;
 				case BGEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] >= 0);
+					instructions_executed++;
 				break;
 				case JUMP:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (true);
+					instructions_executed++;
 				break;
 
 			}
@@ -356,26 +374,56 @@ void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER
         // IF/ID (decode instruction currently in this register)
 			// pass registers through
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[ID][i] = sp_registers[IF][i];
+			IReg[ID] = IReg[IF];
 			// A = regs[rs]
 			// B = regs[rt]
 			// Imm = (sign-extended) imm field of IR
-			sp_registers[ID][A] = gp_registers[IReg[ID].src1];
-			sp_registers[ID][B] = gp_registers[IReg[ID].src2];
+			
+			
+			//sp_registers[ID][A] = gp_registers[IReg[ID].src1];
+			format_t format;
+			if(IReg[ID].opcode == EOP || IReg[ID].opcode == NOP) format = TYPE_NOP;
+			else if(IReg[ID].opcode == ADD || IReg[ID].opcode == SUB || IReg[ID].opcode == XOR) format = TYPE_R;
+			else if(IReg[ID].opcode == JUMP) format = TYPE_J;
+			else if(IReg[ID].opcode >= LW && IReg[ID].opcode <= JUMP ) format = TYPE_I; // branches, ALU immediates, load/store
+			switch(format){
+				case TYPE_NOP: break;
+				case TYPE_R:
+				//sp_registers[ID][] = IReg[ID].dest;
+				sp_registers[ID][A] = gp_registers[IReg[ID].src1];
+				sp_registers[ID][B] = gp_registers[IReg[ID].src2];
+				break;
+				case TYPE_I:
+				//sp_registers[ID][] = IReg[ID].dest;
+				sp_registers[ID][A] = gp_registers[IReg[ID].src1];
+				if(IReg[ID].opcode == SW)sp_registers[ID][B] = gp_registers[IReg[ID].src2];
+				sp_registers[ID][IMM] = IReg[ID].immediate;
+				break;
+				case TYPE_J:
+				sp_registers[ID][IMM] = IReg[ID].immediate;
+				break;
+			}
+			//if(IReg[ID].opcode != SW && IReg[ID].opcode != LW) sp_registers[ID][B] = gp_registers[IReg[ID].src2]; // do not fill if instruction is LW/SW
 			sp_registers[ID][IMM] = IReg[ID].immediate;
-			IReg[ID] = IReg[IF];
+			
         // Fetch next instruction (initialize all other registers in IF to UNDEFINED except PC)
 			// IR = Mem[PC] (sp_registers[IF][IR])
-			// NPC = PC + 4 (sp_registers[IF][NPC])
+			// NPC = PC +  (sp_registers[IF][NPC])
 			// All other spregs UNDEFINED
-			unsigned next_PC = sp_registers[WB][PC];
-			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
-			sp_registers[IF][PC] = next_PC;
-			IReg[IF] = instr_memory[sp_registers[IF][PC]]; // IR array instruction type
+			//sp_registers[IF][PC] = sp_registers[MEM][PC];
+			sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
+			IReg[IF] = instr_memory[sp_registers[IF][PC]++]; // IR array instruction type
+			for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
 			
-			sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
+			
+			//sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
 
 
     } // exits once current_cycle > cycles
+	// once program has run to completion:
+	if(cycles == 0){
+		reset();
+	}
 }
 
 //resets the state of the simulator
@@ -386,15 +434,24 @@ void sim_pipe::run(unsigned cycles){ // **IF YOU RUN INTO ERRORS, CHECK REGISTER
 void sim_pipe::reset(){
     //data_memory = new unsigned char[data_memory_size];
     for(int i = 0; i < data_memory_size; i++) data_memory[i] = 0xFF;
-    for(int i = 0; i < NUM_STAGES; i++){
-        for(int j = 0; j < NUM_SP_REGISTERS; j++)
-        sp_registers[i][j] = UNDEFINED;
+    
+	for(int i = 0; i < NUM_STAGES; i++){
+		for(int j = 0; j < NUM_SP_REGISTERS; j++){
+			sp_registers[i][j] = UNDEFINED;
+		}
+	}
+
+	for(int i = 0; i < NUM_STAGES-2; i++){
+        sp_registers[i][PC] = 0;
+		sp_registers[i][NPC] = 2-i;
     }
-	/*sp_registers[ID][PC] = 3;
-	sp_registers[EXE][PC] = 2;
-	sp_registers[MEM][PC] = 1;
-	sp_registers[IF][PC] = 0;
-	sp_registers[WB][PC] = -1;*/
+	/*for(int i = 0; i < NUM_STAGES; i++){
+	sp_registers[i][PC] = 3 - i;
+	sp_registers[i][NPC] = 4 - i;
+	}
+	sp_registers[EXE][PC] = 0;
+	sp_registers[EXE][NPC] = 1;*/
+	//sp_registers[EXE][NPC] = sp_registers[ID][PC];
 	instruction_t null_inst;
 	null_inst.dest = 0;
 	null_inst.src1 = 0;
@@ -404,6 +461,7 @@ void sim_pipe::reset(){
 	null_inst.label = "";
 	for(int i = 0; i < NUM_STAGES; i++) IReg[i] = null_inst;
 	for(int i = 0; i < NUM_GP_REGISTERS; i++) gp_registers[i] = UNDEFINED;
+	current_cycle = 0;
 }
 
 //return value of special purpose register
@@ -421,7 +479,7 @@ void sim_pipe::set_gp_register(unsigned reg, int value){
 }
 
 float sim_pipe::get_IPC(){
-        return instructions_executed / (float)current_cycle; //please modify
+        return (float)instructions_executed / get_clock_cycles(); //please modify
 }
 
 unsigned sim_pipe::get_instructions_executed(){
@@ -433,6 +491,5 @@ unsigned sim_pipe::get_stalls(){
 }
 
 unsigned sim_pipe::get_clock_cycles(){
-        return current_cycle; //please modify
+        return current_cycle - 1; //please modify
 }
-
