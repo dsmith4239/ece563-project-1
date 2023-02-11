@@ -183,7 +183,7 @@ void sim_pipe::load_program(const char *filename, unsigned base_address){
             instr.opcode == BGEZ || instr.opcode == BLEZ ||
             instr.opcode == JUMP
 	 ){
-		instr_memory[i].immediate = (labels[instr.label] - i - 1) << 2;
+		instr_memory[i].immediate = (labels[instr.label] - i - 1);// << 2; // instructions are sequential an array - shouldn't be multiplied by 4
 	}
         i++;
    }
@@ -300,7 +300,15 @@ void sim_pipe::run(unsigned cycles){
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
 			// PC = NPC
 			//sp_registers[IF][PC] = sp_registers[MEM][NPC]; // update PC with propagated value or 
-			if(sp_registers[MEM][COND] == 1) sp_registers[MEM][PC] = sp_registers[MEM][ALU_OUTPUT];
+			if(sp_registers[MEM][COND] == 1) {
+				// 	branch taken
+				sp_registers[MEM][PC] = sp_registers[MEM][ALU_OUTPUT];
+				//	flush instructions currently in EXE, ID to NOP
+				IReg[EXE] = null_inst;
+				IReg[ID] = null_inst;
+				// update PC in IFetch
+				//	if(sp_registers[MEM][COND] == 1) [IF][PC] == sp_registers[MEM][PC]
+			}
 			else sp_registers[MEM][PC] = sp_registers[MEM][NPC];
 			switch(IReg[MEM].opcode){
 				// If load: LMD = Mem[ALU output]
@@ -357,7 +365,7 @@ void sim_pipe::run(unsigned cycles){
 					instructions_executed++;
 				break;
 				case BNEZ:
-					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM]); //<< 2); produces wrong results with << 4 
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
 					instructions_executed++;
 				break;
@@ -388,6 +396,9 @@ void sim_pipe::run(unsigned cycles){
 				break;
 
 			}
+
+			// if [EXE][COND], need to clear pipeline
+
 			// If ALU: ALU out = A op B
 			// If ALU(Imm): ALU out = A op Imm
 			// If memory reference: ALU out = A + Imm
@@ -397,8 +408,10 @@ void sim_pipe::run(unsigned cycles){
         // IF/ID (decode instruction currently in this register)
 			// pass registers through if not stalled. if stalled, generate nops NEW
 			if((IReg[MEM].opcode != NOP && IReg[MEM].opcode != SW && IReg[MEM].opcode != EOP) && (IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2)) {
+				if(IReg[MEM].opcode < 7){
 				stall_at_ID = true;// no stall on nops: null instructions are all UNDEFINED
-				stalls++;
+					stalls++;
+				}
 			}
 			// RAW block: if src1 or src2 == lastDest, stall
 			lastDest = IReg[IF].dest;
@@ -421,13 +434,7 @@ void sim_pipe::run(unsigned cycles){
 			}else{
 				// normal decode
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[ID][i] = sp_registers[IF][i];
-			IReg[ID] = IReg[IF];
-			
-			
-
-			// A = regs[rs]
-			// B = regs[rt]
-			// Imm = (sign-extended) imm field of IR
+			if(IReg[IF].opcode != 0xbaadf00d) IReg[ID] = IReg[IF];
 			
 			
 			//sp_registers[ID][A] = gp_registers[IReg[ID].src1];
@@ -465,6 +472,7 @@ void sim_pipe::run(unsigned cycles){
 			
 
 			if(!stall_at_ID){ // 2 blocks so if we come out of stall we can advance in the same CC
+				if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // overwrite with new PC if branch taken in MEM stage
 				sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
 				IReg[IF] = instr_memory[sp_registers[IF][PC]++]; // IR array instruction type
 				if(IReg[IF].immediate == 0xbaadf00d) IReg[IF].immediate = UNDEFINED;
@@ -477,7 +485,7 @@ void sim_pipe::run(unsigned cycles){
 				}
 			
 			}
-			
+			sp_registers[IF][NPC]++; // NEW
 			// check for RAW stall again
 			//if(IReg[ID].dest == IReg[IF].src1 || IReg[ID].dest == IReg[IF].src2) stall_at_ID = true;
 
