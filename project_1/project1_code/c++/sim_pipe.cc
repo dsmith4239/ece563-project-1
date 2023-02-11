@@ -236,6 +236,8 @@ sim_pipe::sim_pipe(unsigned mem_size, unsigned mem_latency){
 	instructions_executed = 0;// placeholders
 	local_cycles = 0;
 	stall_at_ID = false; // if we need to propagate nops to prevent hazards
+	stall_at_MEM = false; // if we need to stall for structural hazards
+	mem_op_release_cycle = UNDEFINED;
 	reset();
 }
 	
@@ -254,25 +256,17 @@ sim_pipe::~sim_pipe(){
 /* body of the simulator */
 void sim_pipe::run(unsigned cycles){ 
     local_cycles = 0;
-	//if cycles = 0, run until EOP
-    // or for each cycle ...
-	 
-    /*
-    data_memory = new unsigned char[data_memory_size];
-    data_memory_latency = mem_latency;
-
-    int gp_registers[NUM_GP_REGISTERS]; //
-    unsigned sp_registers[NUM_STAGES][NUM_SP_REGISTERS]; // sp_registers[IF][PC] holds pc value
-
-    //instruction memory
-    instruction_t instr_memory[PROGRAM_SIZE];
-    */
 
     while((cycles != 0 && local_cycles < cycles) or (cycles == 0)){
         if((cycles != 0 && local_cycles < cycles)) local_cycles++;
 		// during each cycle:
         current_cycle++;        
-        // MEM/WB is written back (if necessary)
+
+
+
+        // writeback: MEM/WB is written back (if necessary)
+			if(!stall_at_MEM){
+			
 			IReg[WB] = IReg[MEM];
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[WB][i] = sp_registers[MEM][i];
 			switch(IReg[WB].opcode){
@@ -294,8 +288,32 @@ void sim_pipe::run(unsigned cycles){
 				case LW: set_gp_register(IReg[WB].dest,sp_registers[WB][LMD]);
 				break;
 			}
+			}
+			else{ 
+				IReg[WB] = null_inst;
+				for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[WB][i] = UNDEFINED;
+			}
 			//instructions_executed++;
-        // EX/MEM (memory operations)
+
+
+
+
+        // memory operations: EX/MEM
+
+		/*
+		memory latency: operations in MEM take L+1 cycles to complete
+		if latency != 0:
+		mem_op_release_cycle = get cycles
+		if cycle == mem_op_release_cycle + latency -> execute
+		else wait and pause all operations (stall_at_mem) (only need to replace WB with nop)
+		if(!stall_at_mem) -> normal stage operations, if(stall_at_mem) do nothing
+		*/
+		if(stall_at_MEM){ // memory is currently busy: check if stall is released
+		stalls++;
+		if(get_clock_cycles() == mem_op_release_cycle){	// if operation takes place this cycle, take normal action
+			mem_op_release_cycle = UNDEFINED;
+			stall_at_MEM = false;
+			stalls--;
 			IReg[MEM] = IReg[EXE];
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
 			// PC = NPC
@@ -318,17 +336,20 @@ void sim_pipe::run(unsigned cycles){
 				case SW: write_memory(sp_registers[MEM][ALU_OUTPUT],sp_registers[MEM][A]);
 				break;
 			}
-        // ID/EX (execute)
-			
-			/*if(stall_at_ID){
-				//IReg[EXE] = null_inst;
-				IReg[EXE] = IReg[ID];
-			}else{
-				// normal decode*/
+		}
+
+		} else { // memory is not busy - start request and set release cycle to current cycle + latency
+			mem_op_release_cycle = get_clock_cycles() + data_memory_latency - 2;
+			stall_at_MEM = true;
+		}
+
+
+
+
+        // execute: ID/EX
+			if(!stall_at_MEM){	// only execute lower stages if memory is not busy - otherwise, whole pipeline waits
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
 			IReg[EXE] = IReg[ID];
-			
-			//}
 			switch(IReg[EXE].opcode){
 				case NOP: break;
 				case ADD: 
@@ -396,7 +417,7 @@ void sim_pipe::run(unsigned cycles){
 				break;
 
 			}
-
+			
 			// if [EXE][COND], need to clear pipeline
 
 			// If ALU: ALU out = A op B
@@ -405,7 +426,16 @@ void sim_pipe::run(unsigned cycles){
 			// Else (if branch) ALU out = NPC + (Imm << 2)
 			// Cond = (A == 0)
 			
-        // IF/ID (decode instruction currently in this register)
+
+
+
+
+
+
+
+
+
+         // decode: IF/ID
 			// pass registers through if not stalled. if stalled, generate nops NEW
 			if((IReg[MEM].opcode != NOP && IReg[MEM].opcode != SW && IReg[MEM].opcode != EOP) && (IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2)) {
 				if(IReg[MEM].opcode < 7){
@@ -463,14 +493,23 @@ void sim_pipe::run(unsigned cycles){
 			//if(IReg[ID].opcode != SW && IReg[ID].opcode != LW) sp_registers[ID][B] = gp_registers[IReg[ID].src2]; // do not fill if instruction is LW/SW
 			sp_registers[ID][IMM] = IReg[ID].immediate;
 			}
-        // Fetch next instruction (initialize all other registers in IF to UNDEFINED except PC)
-			// IR = Mem[PC] (sp_registers[IF][IR])
-			// NPC = PC +  (sp_registers[IF][NPC])
-			// All other spregs UNDEFINED
-			//sp_registers[IF][PC] = sp_registers[MEM][PC];
-			
-			
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         // fetch: next instruction (initialize all other registers in IF to UNDEFINED except PC)
+			
 			if(!stall_at_ID){ // 2 blocks so if we come out of stall we can advance in the same CC
 				if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // overwrite with new PC if branch taken in MEM stage
 				sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
@@ -490,7 +529,7 @@ void sim_pipe::run(unsigned cycles){
 			//if(IReg[ID].dest == IReg[IF].src1 || IReg[ID].dest == IReg[IF].src2) stall_at_ID = true;
 
 			//sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
-
+		}
 
     } // exits once current_cycle > cycles
 	// once program has run to completion:
@@ -498,6 +537,27 @@ void sim_pipe::run(unsigned cycles){
 		reset();
 	}*/
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 //resets the state of the simulator
 /* Note:

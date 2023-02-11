@@ -67,6 +67,8 @@ class sim_pipe{
 	instruction_t null_inst;
 	unsigned lastDest; // for RAW hazards
 	bool stall_at_ID;
+	bool stall_at_MEM;
+	unsigned mem_op_release_cycle;
 	unsigned local_cycles; // for tracking executions in a run(int)
 
 	//instruction_t null_inst;
