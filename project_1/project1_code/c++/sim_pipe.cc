@@ -396,8 +396,8 @@ void sim_pipe::run(unsigned cycles){
 			
         // IF/ID (decode instruction currently in this register)
 			// pass registers through if not stalled. if stalled, generate nops NEW
-			if(IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2) {
-				stall_at_ID = true;
+			if((IReg[MEM].opcode != NOP && IReg[MEM].opcode != SW && IReg[MEM].opcode != EOP) && (IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2)) {
+				stall_at_ID = true;// no stall on nops: null instructions are all UNDEFINED
 				stalls++;
 			}
 			// RAW block: if src1 or src2 == lastDest, stall
@@ -408,12 +408,12 @@ void sim_pipe::run(unsigned cycles){
 				// Reset stall_count to 0 at every detection
 				local_stall_count++;
 				
-				if(local_stall_count == 2) {
+				if(local_stall_count == 3) {
 					stall_at_ID = false;// magic number
 					local_stall_count = 0;
 				}
 				
-				cout << "STALLED!"; // remove
+				//cout << "STALLED!"; // remove
 			}	// MOVED STALL CHECK BLOCK TO ID
 			if(stall_at_ID){
 				// stall behavior: generate nops
@@ -471,9 +471,9 @@ void sim_pipe::run(unsigned cycles){
 				for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
 
 				// RAW: if new instruction src1 or src2 wants to access value of last destination regisiter, stall				
-				if(lastDest == IReg[IF].src1 || lastDest == IReg[IF].src2) {
+				if((lastDest == IReg[IF].src1 || lastDest == IReg[IF].src2) && lastDest != UNDEFINED && lastDest != 0xbaadf00d) {
 					stall_at_ID = true;
-					//stalls++;
+					stalls++;
 				}
 			
 			}
@@ -546,7 +546,8 @@ unsigned sim_pipe::get_instructions_executed(){
 }
 
 unsigned sim_pipe::get_stalls(){
-        return stalls - 1; //please modify
+        if(stalls != 0) return stalls - 1; //please modify
+		return stalls;
 }
 
 unsigned sim_pipe::get_clock_cycles(){
