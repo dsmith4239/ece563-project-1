@@ -261,7 +261,8 @@ void sim_pipe::run(unsigned cycles){
         if((cycles != 0 && local_cycles < cycles)) local_cycles++;
 		// during each cycle:
         current_cycle++;        
-
+		if(stall_at_ID || stall_at_MEM) stalls++;
+		//if(stall_at_MEM) stalls++; //NEW 5
 
 
         // writeback: MEM/WB is written back (if necessary)
@@ -309,8 +310,8 @@ void sim_pipe::run(unsigned cycles){
 		if(!stall_at_mem) -> normal stage operations, if(stall_at_mem) do nothing
 		*/
 		if(stall_at_MEM){ // memory is currently busy: check if stall is released
-		stalls++;
-		if(get_clock_cycles() == mem_op_release_cycle){	// if operation takes place this cycle, take normal action
+		//stalls++;
+		if(get_clock_cycles() == mem_op_release_cycle || data_memory_latency == 0){	// if operation takes place this cycle, take normal action
 			mem_op_release_cycle = UNDEFINED;
 			stall_at_MEM = false;
 			stalls--;
@@ -338,9 +339,30 @@ void sim_pipe::run(unsigned cycles){
 			}
 		}
 
-		} else { // memory is not busy - start request and set release cycle to current cycle + latency
-			mem_op_release_cycle = get_clock_cycles() + data_memory_latency - 2;
+		} else if(IReg[EXE].opcode == LW || IReg[EXE].opcode == SW) { // memory is not busy - start request and set release cycle to current cycle + latency
+			IReg[MEM] = IReg[EXE];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+			mem_op_release_cycle = get_clock_cycles() + data_memory_latency;//+ 2;
 			stall_at_MEM = true;
+			//stalls++;
+		}else{// just passin through :)
+			
+			
+			IReg[MEM] = IReg[EXE];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+		
+			if(sp_registers[MEM][COND] == 1) {
+				// 	branch taken
+				sp_registers[MEM][PC] = sp_registers[MEM][ALU_OUTPUT];
+				//	flush instructions currently in EXE, ID to NOP
+				IReg[EXE] = null_inst;
+				IReg[ID] = null_inst;
+				IReg[IF] = null_inst; // NEW 6
+				// update PC in IFetch
+				//	if(sp_registers[MEM][COND] == 1) [IF][PC] == sp_registers[MEM][PC]
+			}
+			else sp_registers[MEM][PC] = sp_registers[MEM][NPC];
+		
 		}
 
 
@@ -350,70 +372,72 @@ void sim_pipe::run(unsigned cycles){
 			if(!stall_at_MEM){	// only execute lower stages if memory is not busy - otherwise, whole pipeline waits
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
 			IReg[EXE] = IReg[ID];
+			//sp_registers[EXE][ALU_OUTPUT] = alu(IReg[EXE].opcode, sp_registers[EXE][A], sp_registers[EXE][B], IReg[EXE].immediate, sp_registers[EXE][NPC]);
+			if(!stall_at_ID)instructions_executed++;
 			switch(IReg[EXE].opcode){
 				case NOP: break;
 				case ADD: 
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][B];
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case SUB:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][B];
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case ADDI:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][IMM];
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case SUBI:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][IMM];
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case LW:
 					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case SW:
 					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][B] + sp_registers[EXE][IMM];
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case XOR:
 					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] ^ sp_registers[EXE][B];
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case BEQZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] == 0);
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case BNEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM]); //<< 2); produces wrong results with << 4 
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case BLTZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] < 0);
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case BGTZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] > 0);
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case BLEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] <= 0);
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case BGEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] >= 0);
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 				case JUMP:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (true);
-					instructions_executed++;
+					//instructions_executed++;
 				break;
 
 			}
@@ -440,7 +464,7 @@ void sim_pipe::run(unsigned cycles){
 			if((IReg[MEM].opcode != NOP && IReg[MEM].opcode != SW && IReg[MEM].opcode != EOP) && (IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2)) {
 				if(IReg[MEM].opcode < 7){
 				stall_at_ID = true;// no stall on nops: null instructions are all UNDEFINED
-					stalls++;
+					//stalls++;
 				}
 			}
 			// RAW block: if src1 or src2 == lastDest, stall
@@ -452,6 +476,7 @@ void sim_pipe::run(unsigned cycles){
 				local_stall_count++;
 				
 				if(local_stall_count == 3) {
+					//stalls++;
 					stall_at_ID = false;// magic number
 					local_stall_count = 0;
 				}
@@ -508,23 +533,25 @@ void sim_pipe::run(unsigned cycles){
 
 
 
-         // fetch: next instruction (initialize all other registers in IF to UNDEFINED except PC)
-			
+         // fetch: next instruction (initialize all other registers in IF to UNDEFINED except PC) 
+			if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // testcase 6 needs -2??
+			sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
 			if(!stall_at_ID){ // 2 blocks so if we come out of stall we can advance in the same CC
-				if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // overwrite with new PC if branch taken in MEM stage
-				sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
-				IReg[IF] = instr_memory[sp_registers[IF][PC]++]; // IR array instruction type
+				// if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // overwrite with new PC if branch taken in MEM stage
+				// sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
+				IReg[IF] = instr_memory[sp_registers[IF][PC]]; // IR array instruction type
+				sp_registers[IF][PC]++;
 				if(IReg[IF].immediate == 0xbaadf00d) IReg[IF].immediate = UNDEFINED;
 				for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
 
-				// RAW: if new instruction src1 or src2 wants to access value of last destination regisiter, stall				
+				// RAW: if new instruction src1 or src2 wants to access value of last destination register, stall				
 				if((lastDest == IReg[IF].src1 || lastDest == IReg[IF].src2) && lastDest != UNDEFINED && lastDest != 0xbaadf00d) {
 					stall_at_ID = true;
-					stalls++;
+					//stalls++;
 				}
 			
 			}
-			sp_registers[IF][NPC]++; // NEW
+			if(!stall_at_ID) sp_registers[IF][NPC]++; // NEW
 			// check for RAW stall again
 			//if(IReg[ID].dest == IReg[IF].src1 || IReg[ID].dest == IReg[IF].src2) stall_at_ID = true;
 
