@@ -183,7 +183,7 @@ void sim_pipe::load_program(const char *filename, unsigned base_address){
             instr.opcode == BGEZ || instr.opcode == BLEZ ||
             instr.opcode == JUMP
 	 ){
-		instr_memory[i].immediate = (labels[instr.label] - i - 1) << 2; // instructions are sequential an array - shouldn't be multiplied by 4
+		instr_memory[i].immediate = (labels[instr.label] - i - 1); //<< 2; // instructions are sequential an array - shouldn't be multiplied by 4
 	}
         i++;
    }
@@ -315,7 +315,7 @@ void sim_pipe::run(unsigned cycles){
 		if(get_clock_cycles() == mem_op_release_cycle || data_memory_latency == 0){	// if operation takes place this cycle, take normal action
 			mem_op_release_cycle = UNDEFINED;
 			stall_at_MEM = false;
-			stalls--;
+			//stalls--;
 			IReg[MEM] = IReg[EXE];
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i]; //
 			// PC = NPC
@@ -374,7 +374,7 @@ void sim_pipe::run(unsigned cycles){
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
 			IReg[EXE] = IReg[ID];
 			//sp_registers[EXE][ALU_OUTPUT] = alu(IReg[EXE].opcode, sp_registers[EXE][A], sp_registers[EXE][B], IReg[EXE].immediate, sp_registers[EXE][NPC]);
-			if(!stall_at_ID)instructions_executed++;
+			if(!stall_at_ID && IReg[EXE].opcode != NOP)instructions_executed++;
 			switch(IReg[EXE].opcode){
 				case NOP: break;
 				case ADD: 
@@ -411,7 +411,7 @@ void sim_pipe::run(unsigned cycles){
 					//instructions_executed++;
 				break;
 				case BNEZ:
-					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2); //produces wrong results with << 4 
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2); //produces wrong results with << 2?
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
 					//instructions_executed++;
 				break;
@@ -564,6 +564,7 @@ void sim_pipe::run(unsigned cycles){
 	/*if(cycles == 0){
 		reset();
 	}*/
+	if(data_memory_latency == 0) stalls = 0;
 }
 
 
