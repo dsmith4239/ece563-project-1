@@ -316,7 +316,7 @@ void sim_pipe::run(unsigned cycles){
 			stall_at_MEM = false;
 			stalls--;
 			IReg[MEM] = IReg[EXE];
-			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i]; //
 			// PC = NPC
 			//sp_registers[IF][PC] = sp_registers[MEM][NPC]; // update PC with propagated value or 
 			if(sp_registers[MEM][COND] == 1) {
@@ -332,7 +332,7 @@ void sim_pipe::run(unsigned cycles){
 			switch(IReg[MEM].opcode){
 				// If load: LMD = Mem[ALU output]
 				// If store: Mem[ALU output] = B
-				case LW: sp_registers[MEM][LMD] = data_memory[sp_registers[MEM][ALU_OUTPUT]];
+				case LW: sp_registers[MEM][LMD] = char2int(&data_memory[sp_registers[MEM][ALU_OUTPUT]]);//data_memory[sp_registers[MEM][ALU_OUTPUT]]; LAST THING I CHANGED 
 				break;
 				case SW: write_memory(sp_registers[MEM][ALU_OUTPUT],sp_registers[MEM][A]);
 				break;
