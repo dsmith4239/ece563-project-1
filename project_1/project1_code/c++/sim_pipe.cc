@@ -183,7 +183,7 @@ void sim_pipe::load_program(const char *filename, unsigned base_address){
             instr.opcode == BGEZ || instr.opcode == BLEZ ||
             instr.opcode == JUMP
 	 ){
-		instr_memory[i].immediate = (labels[instr.label] - i - 1);// << 2; // instructions are sequential an array - shouldn't be multiplied by 4
+		instr_memory[i].immediate = (labels[instr.label] - i - 1) << 2; // instructions are sequential an array - shouldn't be multiplied by 4
 	}
         i++;
    }
@@ -226,7 +226,7 @@ sim_pipe::sim_pipe(unsigned mem_size, unsigned mem_latency){
 	data_memory = new unsigned char[data_memory_size];
 	stalls = 0;
 	local_stall_count = 0;
-	
+	pc_print = instr_base_address;
 	null_inst.dest = UNDEFINED;
 	null_inst.src1 = UNDEFINED;
 	null_inst.src2 = UNDEFINED;
@@ -238,6 +238,7 @@ sim_pipe::sim_pipe(unsigned mem_size, unsigned mem_latency){
 	stall_at_ID = false; // if we need to propagate nops to prevent hazards
 	stall_at_MEM = false; // if we need to stall for structural hazards
 	mem_op_release_cycle = UNDEFINED;
+	
 	reset();
 }
 	
@@ -256,7 +257,7 @@ sim_pipe::~sim_pipe(){
 /* body of the simulator */
 void sim_pipe::run(unsigned cycles){ 
     local_cycles = 0;
-
+	if(current_cycle == 0) sp_registers[IF][PC] = instr_base_address;// load pc
     while((cycles != 0 && local_cycles < cycles) or (cycles == 0)){
         if((cycles != 0 && local_cycles < cycles)) local_cycles++;
 		// during each cycle:
@@ -410,7 +411,7 @@ void sim_pipe::run(unsigned cycles){
 					//instructions_executed++;
 				break;
 				case BNEZ:
-					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM]); //<< 2); produces wrong results with << 4 
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2); //produces wrong results with << 4 
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
 					//instructions_executed++;
 				break;
@@ -488,7 +489,7 @@ void sim_pipe::run(unsigned cycles){
 				IReg[ID] = null_inst;
 			}else{
 				// normal decode
-			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[ID][i] = sp_registers[IF][i];
+			for(int i = 1; i < NUM_SP_REGISTERS; i++) sp_registers[ID][i] = sp_registers[IF][i];
 			if(IReg[IF].opcode != 0xbaadf00d) IReg[ID] = IReg[IF];
 			
 			
@@ -534,13 +535,13 @@ void sim_pipe::run(unsigned cycles){
 
 
          // fetch: next instruction (initialize all other registers in IF to UNDEFINED except PC) 
-			if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // testcase 6 needs -2??
-			sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
+			if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 4;
+			sp_registers[IF][NPC] = sp_registers[IF][PC] + 4;
 			if(!stall_at_ID){ // 2 blocks so if we come out of stall we can advance in the same CC
 				// if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // overwrite with new PC if branch taken in MEM stage
 				// sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
-				IReg[IF] = instr_memory[sp_registers[IF][PC]]; // IR array instruction type
-				sp_registers[IF][PC]++;
+				IReg[IF] = instr_memory[(sp_registers[IF][PC] - instr_base_address) / 4]; // IR array instruction type
+				sp_registers[IF][PC]+=4;
 				if(IReg[IF].immediate == 0xbaadf00d) IReg[IF].immediate = UNDEFINED;
 				for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
 
@@ -551,7 +552,7 @@ void sim_pipe::run(unsigned cycles){
 				}
 			
 			}
-			if(!stall_at_ID) sp_registers[IF][NPC]++; // NEW
+			if(!stall_at_ID) sp_registers[IF][NPC]+= 4; // NEW
 			// check for RAW stall again
 			//if(IReg[ID].dest == IReg[IF].src1 || IReg[ID].dest == IReg[IF].src2) stall_at_ID = true;
 
@@ -601,10 +602,10 @@ void sim_pipe::reset(){
 		}
 	}
 
-	for(int i = 0; i < NUM_STAGES-2; i++){
+	/*for(int i = 0; i < NUM_STAGES-2; i++){
         sp_registers[i][PC] = 0;
 		sp_registers[i][NPC] = 2-i;
-    }
+    }*/	//sp_registers[IF][PC] = instr_base_address;
 	/*for(int i = 0; i < NUM_STAGES; i++){
 	sp_registers[i][PC] = 3 - i;
 	sp_registers[i][NPC] = 4 - i;
