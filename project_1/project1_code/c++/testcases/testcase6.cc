@@ -1,4 +1,4 @@
-#include "../sim_pipe.cc"//#include "sim_pipe.h"
+#include "sim_pipe.h"
 #include <iostream>
 #include <stdlib.h>
 
@@ -15,7 +15,7 @@ int main(int argc, char **argv){
 	sim_pipe *mips = new sim_pipe(1024*1024, 4);
 
 	//loads program in instruction memory at address 0x10000000
-	mips->load_program("C:/Users/Smith/Desktop/NCSU/spring 23/ECE563/project/ece563-project-1/project_1/project1_code/c++/asm/code.asm", 0x10000000);
+	mips->load_program("asm/code.asm", 0x10000000);
 
 	//initialize data memory and prints its content (for the specified address ranges)
 	for (i = 0xA000, j=1; i<0xA020; i+=4, j+=1) mips->write_memory(i,j);
