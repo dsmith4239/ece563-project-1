@@ -643,7 +643,7 @@ unsigned sim_pipe::get_instructions_executed(){
 }
 
 unsigned sim_pipe::get_stalls(){
-        if(stalls != 0) return stalls - 1; //please modify
+        if(stalls != 0) return stalls; //please modify
 		return stalls;
 }
 
