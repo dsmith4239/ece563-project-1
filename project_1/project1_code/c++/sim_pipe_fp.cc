@@ -1,4 +1,4 @@
-#include "sim_pipe_fp.h"
+#include "C:\Users\Smith\Desktop\NCSU\spring 23\ECE563\project\ece563-project-1\project_1\project1_code\c++\sim_pipe_fp.h"
 #include <stdlib.h>
 #include <iostream>
 #include <fstream>
@@ -15,7 +15,7 @@
 
 using namespace std;
 
-//used for debugging purposes
+//used for debugging purposes/*
 static const char *reg_names[NUM_SP_REGISTERS] = {"PC", "NPC", "IR", "A", "B", "IMM", "COND", "ALU_OUTPUT", "LMD"};
 static const char *stage_names[NUM_STAGES] = {"IF", "ID", "EX", "MEM", "WB"};
 static const char *instr_names[NUM_OPCODES] = {"LW", "SW", "ADD", "ADDI", "SUB", "SUBI", "XOR", "BEQZ", "BNEZ", "BLTZ", "BGTZ", "BLEZ", "BGEZ", "JUMP", "EOP", "NOP", "LWS", "SWS", "ADDS", "SUBS", "MULTS", "DIVS"};
@@ -35,14 +35,14 @@ inline unsigned char2int(unsigned char *buffer){
 }
 
 /* convert a float into an unsigned */
-inline unsigned float2unsigned(float value){
+inline unsigned float2unsigned_local(float value){
 	unsigned result;
 	memcpy(&result, &value, sizeof value);
 	return result;
 }
 
 /* convert an unsigned into a float */
-inline float unsigned2float(unsigned value){
+inline float unsigned_to_float(unsigned value){
 	float result;
 	memcpy(&result, &value, sizeof value);
 	return result;
@@ -114,16 +114,16 @@ unsigned alu(unsigned opcode, unsigned a, unsigned b, unsigned imm, unsigned npc
 			case JUMP:
 				return(npc+imm);
 			case ADDS:
-				return(float2unsigned(unsigned2float(a)+unsigned2float(b)));
+				return(float2unsigned_local(unsigned_to_float(a)+unsigned_to_float(b)));
 				break;
 			case SUBS:
-				return(float2unsigned(unsigned2float(a)-unsigned2float(b)));
+				return(float2unsigned_local(unsigned_to_float(a)-unsigned_to_float(b)));
 				break;
 			case MULTS:
-				return(float2unsigned(unsigned2float(a)*unsigned2float(b)));
+				return(float2unsigned_local(unsigned_to_float(a)*unsigned_to_float(b)));
 				break;
 			case DIVS:
-				return(float2unsigned(unsigned2float(a)/unsigned2float(b)));
+				return(float2unsigned_local(unsigned_to_float(a)/unsigned_to_float(b)));
 				break;
 			default:	
 				return (-1);
@@ -143,6 +143,13 @@ sim_pipe_fp::sim_pipe_fp(unsigned mem_size, unsigned mem_latency){
 	data_memory_latency = mem_latency;
 	data_memory = new unsigned char[data_memory_size];
 	num_units = 0;
+
+	null_inst.opcode = NOP;
+	null_inst.dest = UNDEFINED;
+	null_inst.src1 = UNDEFINED;
+	null_inst.src2 = UNDEFINED;
+	null_inst.immediate = UNDEFINED;
+
 	reset();
 }
 	
@@ -160,7 +167,7 @@ void sim_pipe_fp::print_memory(unsigned start_address, unsigned end_address){
 		if (i%4 == 3){
 #ifdef DEBUG_MEMORY 
 			unsigned u = char2unsigned(&data_memory[i-3]);
-			cout << " - unsigned=" << u << " - float=" << unsigned2float(u);
+			cout << " - unsigned=" << u << " - float=" << unsigned_to_float(u);
 #endif
 			cout << endl;
 		}
@@ -184,7 +191,7 @@ void sim_pipe_fp::print_registers(){
         for (i=0; i< NUM_GP_REGISTERS; i++)
                 if (get_int_register(i)!=(int)UNDEFINED) cout << "R" << dec << i << " = " << get_int_register(i) << hex << " / 0x" << get_int_register(i) << endl;
         for (i=0; i< NUM_GP_REGISTERS; i++)
-                if (get_fp_register(i)!=UNDEFINED) cout << "F" << dec << i << " = " << get_fp_register(i) << hex << " / 0x" << float2unsigned(get_fp_register(i)) << endl;
+                if (get_fp_register(i)!=UNDEFINED) cout << "F" << dec << i << " = " << get_fp_register(i) << hex << " / 0x" << float2unsigned_local(get_fp_register(i)) << endl;
 }
 
 
@@ -193,10 +200,16 @@ void sim_pipe_fp::print_registers(){
 /* initializes an execution unit */ 
 void sim_pipe_fp::init_exec_unit(exe_unit_t exec_unit, unsigned latency, unsigned instances){
 	for (unsigned i=0; i<instances; i++){
-		exec_units[num_units].type = exec_unit;
-		exec_units[num_units].latency = latency;
-		exec_units[num_units].busy = 0;
-		exec_units[num_units].instruction.opcode = NOP;
+		execution_unit_t new_unit;
+		
+		new_unit.type = exec_unit;
+		new_unit.latency = latency;
+		new_unit.busy = 0;
+		//new_unit.instruction.opcode = NOP;
+		new_unit.instruction = null_inst;
+
+		exec_units.push_back(new_unit);
+
 		num_units++;
 	}
 }
@@ -205,7 +218,7 @@ void sim_pipe_fp::init_exec_unit(exe_unit_t exec_unit, unsigned latency, unsigne
 unsigned sim_pipe_fp::get_free_unit(opcode_t opcode){
 	if (num_units == 0){
 		cout << "ERROR:: simulator does not have any execution units!\n";
-		exit(-1);
+		::exit(-1);
 	}
 	for (unsigned u=0; u<num_units; u++){
 		switch(opcode){
@@ -243,7 +256,7 @@ unsigned sim_pipe_fp::get_free_unit(opcode_t opcode){
 				break;
 			default:
 				cout << "ERROR:: operations not requiring exec unit!\n";
-				exit(-1);
+				::exit(-1);
 		}
 	}
 	return UNDEFINED;
@@ -278,14 +291,14 @@ void sim_pipe_fp::load_program(const char *filename, unsigned base_address){
    /* creating a map with the valid opcodes and with the valid labels */
    map<string, opcode_t> opcodes; //for opcodes
    map<string, unsigned> labels;  //for branches
-   for (int i=0; i<NUM_OPCODES; i++)
+   for (int i=0; i<NUM_OPCODES; i++) // fails after 16
 	 opcodes[string(instr_names[i])]=(opcode_t)i;
 
    /* opening the assembly file */
    ifstream fin(filename, ios::in | ios::binary);
    if (!fin.is_open()) {
       cerr << "error: open file " << filename << " failed!" << endl;
-      exit(-1);
+      ::exit(-1);
    }
 
    /* parsing the assembly file line by line */
@@ -409,6 +422,7 @@ void sim_pipe_fp::run(unsigned cycles){
     while((cycles != 0 && local_cycles < cycles) or (cycles == 0)){
         if((cycles != 0 && local_cycles < cycles)) local_cycles++;
 		// during each cycle:
+		decrement_units_busy_time(); // lower busy times
         current_cycle++;        
 		if(stall_at_ID || stall_at_MEM) stalls++;
 		//if(stall_at_MEM) stalls++; //NEW 5
@@ -423,19 +437,19 @@ void sim_pipe_fp::run(unsigned cycles){
 				case EOP: return; // exit at EOP (but make sure all other instructions have written back)
 				break;
 				// if ALU: regs[destination] = ALU output (sp_registers[WB][ALU_OUTPUT])
-				case ADD:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				case ADD:set_int_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
 				break;
-				case SUB:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				case SUB:set_int_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
 				break;
-				case XOR:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				case XOR:set_int_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
 				break;
 				// if ALU with immediate: regs[rt] = ALU output (sp_registers[WB][ALU_OUTPUT])
-				case ADDI:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				case ADDI:set_int_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
 				break;
-				case SUBI:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				case SUBI:set_int_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
 				break;
 				// if load: regs[rt] = LMD (load memory data) (sp_registers[WB][LMD])
-				case LW: set_gp_register(IReg[WB].dest,sp_registers[WB][LMD]);
+				case LW: set_int_register(IReg[WB].dest,sp_registers[WB][LMD]);
 				break;
 			}
 			}

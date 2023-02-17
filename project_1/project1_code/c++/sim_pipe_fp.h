@@ -18,7 +18,7 @@ using namespace std;
 
 typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
 
-typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP, LWS, SWS, ADDS, SUBS, MULTS, DIVS} opcode_t;
+typedef enum {LW, SW, ADD, LWS, SWS, ADDS, SUBS, MULTS, DIVS, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP} opcode_t;
 
 typedef enum {IF, ID, EXE, MEM, WB} stage_t;
 
@@ -41,14 +41,16 @@ typedef struct{
 		// if instruction enters unit, counts down from (latency). 
 		// if == 0 & instruction is present releases instruction. replaces with null_inst
 	int latency = -1;
+	unsigned cycle_instruction_entered_unit = -1; // what clock cycle did instruction enter the unit? used to resolve
+	// conflicts where >1 instruction is ready for release AND to prevent WAW
 	exe_unit_t type = UNDEF;
 } execution_unit_t;
 
 //used for debugging purposes
-static const char *reg_names[NUM_SP_REGISTERS] = {"PC", "NPC", "IR", "A", "B", "IMM", "COND", "ALU_OUTPUT", "LMD"};
+/*static const char *reg_names[NUM_SP_REGISTERS] = {"PC", "NPC", "IR", "A", "B", "IMM", "COND", "ALU_OUTPUT", "LMD"};
 static const char *stage_names[NUM_STAGES] = {"IF", "ID", "EX", "MEM", "WB"};
-static const char *instr_names[NUM_OPCODES] = {"LW", "SW", "ADD", "ADDI", "SUB", "SUBI", "XOR", "BEQZ", "BNEZ", "BLTZ", "BGTZ", "BLEZ", "BGEZ", "JUMP", "EOP", "NOP"};
-
+static const char *instr_names[NUM_OPCODES] = {"LW", "SW", "ADD", "LWS", "SWS", "ADDS", "SUBS", "MULTS", "DIVS", "ADDI", "SUB", "SUBI", "XOR", "BEQZ", "BNEZ", "BLTZ", "BGTZ", "BLEZ", "BGEZ", "JUMP", "EOP", "NOP"};
+*/
 
 class sim_pipe_fp{
 
