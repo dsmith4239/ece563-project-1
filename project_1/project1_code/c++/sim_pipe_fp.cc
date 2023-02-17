@@ -27,6 +27,13 @@ static const char *unit_names[4]={"INTEGER", "ADDER", "MULTIPLIER", "DIVIDER"};
 
    ============================================================= */
 
+/* converts array of char into integer - little indian */
+inline unsigned char2int(unsigned char *buffer){
+	unsigned d;
+	memcpy(&d, buffer, sizeof d);
+	return d;
+}
+
 /* convert a float into an unsigned */
 inline unsigned float2unsigned(float value){
 	unsigned result;
@@ -393,9 +400,321 @@ void sim_pipe_fp::load_program(const char *filename, unsigned base_address){
    ============================================================= */
 
 /* simulator */
-void sim_pipe_fp::run(unsigned cycles){
+
+
+/* body of the simulator */
+void sim_pipe_fp::run(unsigned cycles){ 
+    local_cycles = 0;
+	if(current_cycle == 0) sp_registers[IF][PC] = instr_base_address;// load pc
+    while((cycles != 0 && local_cycles < cycles) or (cycles == 0)){
+        if((cycles != 0 && local_cycles < cycles)) local_cycles++;
+		// during each cycle:
+        current_cycle++;        
+		if(stall_at_ID || stall_at_MEM) stalls++;
+		//if(stall_at_MEM) stalls++; //NEW 5
+
+
+        // writeback: MEM/WB is written back (if necessary)
+			if(!stall_at_MEM){
+			
+			IReg[WB] = IReg[MEM];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[WB][i] = sp_registers[MEM][i];
+			switch(IReg[WB].opcode){
+				case EOP: return; // exit at EOP (but make sure all other instructions have written back)
+				break;
+				// if ALU: regs[destination] = ALU output (sp_registers[WB][ALU_OUTPUT])
+				case ADD:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				case SUB:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				case XOR:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				// if ALU with immediate: regs[rt] = ALU output (sp_registers[WB][ALU_OUTPUT])
+				case ADDI:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				case SUBI:set_gp_register(IReg[WB].dest,sp_registers[WB][ALU_OUTPUT]);
+				break;
+				// if load: regs[rt] = LMD (load memory data) (sp_registers[WB][LMD])
+				case LW: set_gp_register(IReg[WB].dest,sp_registers[WB][LMD]);
+				break;
+			}
+			}
+			else{ 
+				IReg[WB] = null_inst;
+				for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[WB][i] = UNDEFINED;
+			}
+			//instructions_executed++;
+
+
+
+
+        // memory operations: EX/MEM
+
+		/*
+		memory latency: operations in MEM take L+1 cycles to complete
+		if latency != 0:
+		mem_op_release_cycle = get cycles
+		if cycle == mem_op_release_cycle + latency -> execute
+		else wait and pause all operations (stall_at_mem) (only need to replace WB with nop)
+		if(!stall_at_mem) -> normal stage operations, if(stall_at_mem) do nothing
+		*/
+		if(stall_at_MEM){ // memory is currently busy: check if stall is released
+		//stalls++;
+		if(get_clock_cycles() == mem_op_release_cycle || data_memory_latency == 0){	// if operation takes place this cycle, take normal action
+			mem_op_release_cycle = UNDEFINED;
+			stall_at_MEM = false;
+			//stalls--;
+			IReg[MEM] = IReg[EXE];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i]; //
+			// PC = NPC
+			//sp_registers[IF][PC] = sp_registers[MEM][NPC]; // update PC with propagated value or 
+			if(sp_registers[MEM][COND] == 1) {
+				// 	branch taken
+				sp_registers[MEM][PC] = sp_registers[MEM][ALU_OUTPUT];
+				//	flush instructions currently in EXE, ID to NOP
+				IReg[EXE] = null_inst;
+				IReg[ID] = null_inst;
+				// update PC in IFetch
+				//	if(sp_registers[MEM][COND] == 1) [IF][PC] == sp_registers[MEM][PC]
+			}
+			else sp_registers[MEM][PC] = sp_registers[MEM][NPC];
+			switch(IReg[MEM].opcode){
+				// If load: LMD = Mem[ALU output]
+				// If store: Mem[ALU output] = B
+				case LW: sp_registers[MEM][LMD] = char2int(&data_memory[sp_registers[MEM][ALU_OUTPUT]]);//data_memory[sp_registers[MEM][ALU_OUTPUT]]; LAST THING I CHANGED 
+				break;
+				case SW: write_memory(sp_registers[MEM][ALU_OUTPUT],sp_registers[MEM][A]);
+				break;
+			}
+		}
+
+		} else if(IReg[EXE].opcode == LW || IReg[EXE].opcode == SW) { // memory is not busy - start request and set release cycle to current cycle + latency
+			IReg[MEM] = IReg[EXE];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+			mem_op_release_cycle = get_clock_cycles() + data_memory_latency;//+ 2;
+			stall_at_MEM = true;
+			//stalls++;
+		}else{// just passin through :)
+			
+			
+			IReg[MEM] = IReg[EXE];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+		
+			if(sp_registers[MEM][COND] == 1) {
+				// 	branch taken
+				sp_registers[MEM][PC] = sp_registers[MEM][ALU_OUTPUT];
+				//	flush instructions currently in EXE, ID to NOP
+				IReg[EXE] = null_inst;
+				IReg[ID] = null_inst;
+				IReg[IF] = null_inst; // NEW 6
+				// update PC in IFetch
+				//	if(sp_registers[MEM][COND] == 1) [IF][PC] == sp_registers[MEM][PC]
+			}
+			else sp_registers[MEM][PC] = sp_registers[MEM][NPC];
+		
+		}
+
+
+
+
+        // execute: ID/EX
+			if(!stall_at_MEM){	// only execute lower stages if memory is not busy - otherwise, whole pipeline waits
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
+			IReg[EXE] = IReg[ID];
+			//sp_registers[EXE][ALU_OUTPUT] = alu(IReg[EXE].opcode, sp_registers[EXE][A], sp_registers[EXE][B], IReg[EXE].immediate, sp_registers[EXE][NPC]);
+			if(!stall_at_ID && IReg[EXE].opcode != NOP)instructions_executed++;
+			switch(IReg[EXE].opcode){
+				case NOP: break;
+				case ADD: 
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][B];
+					//instructions_executed++;
+				break;
+				case SUB:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][B];
+					//instructions_executed++;
+				break;
+				case ADDI:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][IMM];
+					//instructions_executed++;
+				break;
+				case SUBI:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][IMM];
+					//instructions_executed++;
+				break;
+				case LW:
+					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];
+					//instructions_executed++;
+				break;
+				case SW:
+					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][B] + sp_registers[EXE][IMM];
+					//instructions_executed++;
+				break;
+				case XOR:
+					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] ^ sp_registers[EXE][B];
+					//instructions_executed++;
+				break;
+				case BEQZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] == 0);
+					//instructions_executed++;
+				break;
+				case BNEZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2); //produces wrong results with << 2?
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
+					//instructions_executed++;
+				break;
+				case BLTZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] < 0);
+					//instructions_executed++;
+				break;
+				case BGTZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] > 0);
+					//instructions_executed++;
+				break;
+				case BLEZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] <= 0);
+					//instructions_executed++;
+				break;
+				case BGEZ:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (sp_registers[EXE][A] >= 0);
+					//instructions_executed++;
+				break;
+				case JUMP:
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
+					sp_registers[EXE][COND] = (true);
+					//instructions_executed++;
+				break;
+
+			}
+			
+			// if [EXE][COND], need to clear pipeline
+
+			// If ALU: ALU out = A op B
+			// If ALU(Imm): ALU out = A op Imm
+			// If memory reference: ALU out = A + Imm
+			// Else (if branch) ALU out = NPC + (Imm << 2)
+			// Cond = (A == 0)
+			
+
+
+
+
+
+
+
+
+
+         // decode: IF/ID
+			// pass registers through if not stalled. if stalled, generate nops NEW
+			if((IReg[MEM].opcode != NOP && IReg[MEM].opcode != SW && IReg[MEM].opcode != EOP) && (IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2)) {
+				if(IReg[MEM].opcode < 7){
+				stall_at_ID = true;// no stall on nops: null instructions are all UNDEFINED
+					//stalls++;
+				}
+			}
+			// RAW block: if src1 or src2 == lastDest, stall
+			lastDest = IReg[IF].dest;
+			if(stall_at_ID){
+				// stall behavior - no fetch. increment stall_count, if == NUM_DEPENDENCY STALLS
+				// then release stall_at_ID.
+				// Reset stall_count to 0 at every detection
+				local_stall_count++;
+				
+				if(local_stall_count == 3) {
+					//stalls++;
+					stall_at_ID = false;// magic number
+					local_stall_count = 0;
+				}
+				
+				//cout << "STALLED!"; // remove
+			}	// MOVED STALL CHECK BLOCK TO ID
+			if(stall_at_ID){
+				// stall behavior: generate nops
+				IReg[ID] = null_inst;
+			}else{
+				// normal decode
+			for(int i = 1; i < NUM_SP_REGISTERS; i++) sp_registers[ID][i] = sp_registers[IF][i];
+			if(IReg[IF].opcode != 0xbaadf00d) IReg[ID] = IReg[IF];
+			
+			
+			//sp_registers[ID][A] = gp_registers[IReg[ID].src1];
+			format_t format;
+			if(IReg[ID].opcode == EOP || IReg[ID].opcode == NOP) format = TYPE_NOP;
+			else if(IReg[ID].opcode == ADD || IReg[ID].opcode == SUB || IReg[ID].opcode == XOR) format = TYPE_R;
+			else if(IReg[ID].opcode == JUMP) format = TYPE_J;
+			else if(IReg[ID].opcode >= LW && IReg[ID].opcode <= JUMP ) format = TYPE_I; // branches, ALU immediates, load/store
+			switch(format){
+				case TYPE_NOP: break;
+				case TYPE_R:
+				//sp_registers[ID][] = IReg[ID].dest;
+				sp_registers[ID][A] = gp_registers[IReg[ID].src1];
+				sp_registers[ID][B] = gp_registers[IReg[ID].src2];
+				break;
+				case TYPE_I:
+				//sp_registers[ID][] = IReg[ID].dest;
+				sp_registers[ID][A] = gp_registers[IReg[ID].src1];
+				if(IReg[ID].opcode == SW)sp_registers[ID][B] = gp_registers[IReg[ID].src2];
+				sp_registers[ID][IMM] = IReg[ID].immediate;
+				break;
+				case TYPE_J:
+				sp_registers[ID][IMM] = IReg[ID].immediate;
+				break;
+			}
+			//if(IReg[ID].opcode != SW && IReg[ID].opcode != LW) sp_registers[ID][B] = gp_registers[IReg[ID].src2]; // do not fill if instruction is LW/SW
+			sp_registers[ID][IMM] = IReg[ID].immediate;
+			}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+         // fetch: next instruction (initialize all other registers in IF to UNDEFINED except PC) 
+			if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 4;
+			sp_registers[IF][NPC] = sp_registers[IF][PC] + 4;
+			if(!stall_at_ID){ // 2 blocks so if we come out of stall we can advance in the same CC
+				// if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // overwrite with new PC if branch taken in MEM stage
+				// sp_registers[IF][NPC] = sp_registers[IF][PC] + 1;
+				IReg[IF] = instr_memory[(sp_registers[IF][PC] - instr_base_address) / 4]; // IR array instruction type
+				sp_registers[IF][PC]+=4;
+				if(IReg[IF].immediate == 0xbaadf00d) IReg[IF].immediate = UNDEFINED;
+				for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
+
+				// RAW: if new instruction src1 or src2 wants to access value of last destination register, stall				
+				if((lastDest == IReg[IF].src1 || lastDest == IReg[IF].src2) && lastDest != UNDEFINED && lastDest != 0xbaadf00d) {
+					stall_at_ID = true;
+					//stalls++;
+				}
+			
+			}
+			if(!stall_at_ID) sp_registers[IF][NPC]+= 4; // NEW
+			// check for RAW stall again
+			//if(IReg[ID].dest == IReg[IF].src1 || IReg[ID].dest == IReg[IF].src2) stall_at_ID = true;
+
+			//sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
+		}
+
+    } // exits once current_cycle > cycles
+	// once program has run to completion:
 	
+	if(data_memory_latency == 0) stalls = 0;
 }
+
+
+
 	
 //reset the state of the sim_pipe_fpulator
 void sim_pipe_fp::reset(){
@@ -411,7 +730,7 @@ void sim_pipe_fp::reset(){
 	}
 
 	/* complete the reset function here */
-
+	// reset exec units
 }
 
 //return value of special purpose register

@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <string>
+#include <vector>	// for execution units
 
 using namespace std;
 
@@ -10,17 +11,20 @@ using namespace std;
 
 #define UNDEFINED 0xFFFFFFFF //used to initialize the registers
 #define NUM_SP_REGISTERS 9
-#define NUM_GP_REGISTERS 7 // changed from 32
-#define NUM_OPCODES 16 
+#define NUM_GP_REGISTERS 32 // changed from 7->32 (didnt submit integer with 32 oops)
+#define NUM_FP_REGISTERS 32
+#define NUM_OPCODES 22 // added float opcodes
 #define NUM_STAGES 5
 
 typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
 
-typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP} opcode_t;
+typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP, LWS, SWS, ADDS, SUBS, MULTS, DIVS} opcode_t;
 
 typedef enum {IF, ID, EXE, MEM, WB} stage_t;
 
 typedef enum {TYPE_R, TYPE_I, TYPE_J, TYPE_NOP} format_t;
+
+typedef enum {INTEGER = 0, ADDER, MULTIPLIER, DIVIDER, UNDEF} exe_unit_t;
 
 typedef struct{
         opcode_t opcode; //opcode
@@ -31,13 +35,22 @@ typedef struct{
         string label; //for conditional branches, label of the target instruction - used only for parsing/debugging purposes
 } instruction_t;
 
+typedef struct{
+	instruction_t instruction;
+	int busy = -1; // if == 0, unit is free. 
+		// if instruction enters unit, counts down from (latency). 
+		// if == 0 & instruction is present releases instruction. replaces with null_inst
+	int latency = -1;
+	exe_unit_t type = UNDEF;
+} execution_unit_t;
+
 //used for debugging purposes
 static const char *reg_names[NUM_SP_REGISTERS] = {"PC", "NPC", "IR", "A", "B", "IMM", "COND", "ALU_OUTPUT", "LMD"};
 static const char *stage_names[NUM_STAGES] = {"IF", "ID", "EX", "MEM", "WB"};
 static const char *instr_names[NUM_OPCODES] = {"LW", "SW", "ADD", "ADDI", "SUB", "SUBI", "XOR", "BEQZ", "BNEZ", "BLTZ", "BGTZ", "BLEZ", "BGEZ", "JUMP", "EOP", "NOP"};
 
 
-class sim_pipe{
+class sim_pipe_fp{
 
 	/* Add the data members required by your simulator's implementation here */
 
@@ -52,6 +65,10 @@ class sim_pipe{
 															 // stage between EX and MEM is sp_registers[MEM]
 															 // stage between ID/EX is sp_registers[EX]
 															 // if a SPR is unused by an instruction, it should be set to undefined
+
+		float fp_registers[NUM_FP_REGISTERS];
+
+		vector<execution_unit_t> exec_units; // vector so # is configurable	
 
         //instruction memory 
         instruction_t instr_memory[PROGRAM_SIZE];
@@ -72,6 +89,18 @@ class sim_pipe{
     unsigned instructions_executed = 0;
     unsigned stalls = 0;
 
+	// all these copied from integer
+	unsigned local_stall_count; // resets to 0 for each hazard
+	instruction_t null_inst;
+	unsigned lastDest; // for RAW hazards
+	bool stall_at_ID;
+	bool stall_at_MEM;
+	unsigned mem_op_release_cycle;
+	unsigned local_cycles; // for tracking executions in a run(int)
+
+	// new
+	unsigned num_units;
+
 public:
 
 	//instantiates the simulator with a data memory of given size (in bytes) and latency (in clock cycles)
@@ -79,10 +108,10 @@ public:
            - initialize the registers to UNDEFINED value 
 	   - initialize the data memory to all 0xFF values
 	*/
-	sim_pipe(unsigned data_mem_size, unsigned data_mem_latency);
+	sim_pipe_fp(unsigned data_mem_size, unsigned data_mem_latency);
 	
 	//de-allocates the simulator
-	~sim_pipe();
+	~sim_pipe_fp();
 
 	//loads the assembly program in file "filename" in instruction memory at the specified address
 	void load_program(const char *filename, unsigned base_address=0x0);
@@ -138,6 +167,16 @@ public:
 
 	//prints the values of the registers 
 	void print_registers();
+
+	// my additions
+	int get_int_register(unsigned reg);
+	void set_int_register(unsigned reg, int value);
+	float get_fp_register(unsigned reg);
+	void set_fp_register(unsigned reg, float value);
+	void decrement_units_busy_time();
+	unsigned get_free_unit(opcode_t opcode);
+	void init_exec_unit(exe_unit_t exec_unit, unsigned latency, unsigned instances);
+	void debug_units();
 
 };
 
