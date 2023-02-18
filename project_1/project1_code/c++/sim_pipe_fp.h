@@ -18,7 +18,7 @@ using namespace std;
 
 typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
 
-typedef enum {LW, SW, ADD, LWS, SWS, ADDS, SUBS, MULTS, DIVS, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP} opcode_t;
+typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP, LWS, SWS, ADDS, SUBS, MULTS, DIVS} opcode_t;
 
 typedef enum {IF, ID, EXE, MEM, WB} stage_t;
 
@@ -44,6 +44,8 @@ typedef struct{
 	unsigned cycle_instruction_entered_unit = -1; // what clock cycle did instruction enter the unit? used to resolve
 	// conflicts where >1 instruction is ready for release AND to prevent WAW
 	exe_unit_t type = UNDEF;
+	float fp_output = UNDEFINED;
+	int int_output = UNDEFINED;
 } execution_unit_t;
 
 //used for debugging purposes
