@@ -287,7 +287,7 @@ void sim_pipe_fp::load_program(const char *filename, unsigned base_address){
 
    /* initializing the base instruction address */
    instr_base_address = base_address;
-
+   sp_registers[IF][PC] = instr_base_address;	// added
    /* creating a map with the valid opcodes and with the valid labels */
    map<string, opcode_t> opcodes; //for opcodes
    map<string, unsigned> labels;  //for branches
@@ -548,10 +548,24 @@ void sim_pipe_fp::run(unsigned cycles){
 
 			}
 
-			// if no units are done, NOP
+			// if no units are done & next instruction is arithmetic, NOP
+			// if non arithmetic instruction, pass (FPP Hazards?)
 			if(chosen_unit == UNDEFINED){
 				for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = UNDEFINED;
 				IReg[MEM] = null_inst;
+				if(
+					//IReg[EXE].opcode != ADD &&
+					IReg[EXE].opcode != ADDS &&
+					//IReg[EXE].opcode != ADDI &&
+					//IReg[EXE].opcode != SUB &&
+					//IReg[EXE].opcode != SUBI &&
+					IReg[EXE].opcode != SUBS &&
+					IReg[EXE].opcode != MULTS &&
+					IReg[EXE].opcode != DIVS					
+				){
+					IReg[MEM] = IReg[EXE];
+					for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+				}
 			}
 
 
@@ -583,7 +597,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				case NOP: break;
 				case LWS: sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];break;
 				case SWS: sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][B] + sp_registers[EXE][IMM];break;
-				case ADDS: 
+				case ADDS: {
 					int f = get_free_unit(ADDS);
 					if(f != UNDEFINED){ 
 					// if free unit, push
@@ -602,8 +616,8 @@ void sim_pipe_fp::run(unsigned cycles){
 				(if busy && 0 pass to memory)
 
 				*/
-				break;
-				case SUBS: 
+				break;}
+				case SUBS: {
 					int f = get_free_unit(SUBS);
 					if(f != UNDEFINED){ 
 					// if free unit, push
@@ -613,8 +627,8 @@ void sim_pipe_fp::run(unsigned cycles){
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
 					}// else stall at EXE
 					else stall_at_EXE = true;
-				break;
-				case MULTS: 
+				break;}
+				case MULTS: {
 					int f = get_free_unit(MULTS);
 					if(f != UNDEFINED){ 
 					// if free unit, push
@@ -624,8 +638,8 @@ void sim_pipe_fp::run(unsigned cycles){
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
 					}// else stall at EXE
 					else stall_at_EXE = true;
-				break;
-				case DIVS: 
+				break;}
+				case DIVS: {
 					int f = get_free_unit(DIVS);
 					if(f != UNDEFINED){ 
 					// if free unit, push
@@ -635,7 +649,7 @@ void sim_pipe_fp::run(unsigned cycles){
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
 					}// else stall at EXE
 					else stall_at_EXE = true;
-				break;
+				break;}
 				case ADD: 
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][B];
 					//instructions_executed++;
@@ -858,7 +872,7 @@ void sim_pipe_fp::reset(){
 			sp_registers[i][j] = UNDEFINED;
 		}
 	}
-	sp_registers[IF][PC] = instr_base_address;
+	//sp_registers[IF][PC] = instr_base_address;
 
 	for(int i = 0; i < NUM_STAGES; i++) IReg[i] = null_inst;
 	for(int i = 0; i < NUM_GP_REGISTERS; i++) gp_registers[i] = UNDEFINED;
@@ -868,6 +882,8 @@ void sim_pipe_fp::reset(){
 	stall_at_ID = false;
 	stall_at_MEM = false;
 	stall_at_EXE = false;
+
+	local_stall_count = 0;
 }
 
 //return value of special purpose register
