@@ -533,6 +533,7 @@ void sim_pipe_fp::run(unsigned cycles){
 			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
 			*/
 			unsigned earliest_cycle = UNDEFINED;
+			unsigned chosen_unit = UNDEFINED;
 			for(int i = 0; i < exec_units.size(); i++){
 				execution_unit_t current_unit = exec_units.at(i);
 				if(current_unit.busy == 0 && current_unit.instruction.opcode != NOP && current_unit.cycle_instruction_entered_unit < earliest_cycle){
@@ -542,8 +543,15 @@ void sim_pipe_fp::run(unsigned cycles){
 					IReg[MEM] = current_unit.instruction;
 					if(current_unit.type) sp_registers[MEM][ALU_OUTPUT] = current_unit.fp_output;	// integer type == 0, all others are float types
 					else sp_registers[MEM][ALU_OUTPUT] = current_unit.int_output;
+					chosen_unit = i; // this unit is the one getting pulled from exe
 				}
 
+			}
+
+			// if no units are done, NOP
+			if(chosen_unit == UNDEFINED){
+				for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = UNDEFINED;
+				IReg[MEM] = null_inst;
 			}
 
 
@@ -565,13 +573,69 @@ void sim_pipe_fp::run(unsigned cycles){
 
 
         // execute: ID/EX
+			//decrement_units_busy_time();
 			if(!stall_at_MEM){	// only execute lower stages if memory is not busy - otherwise, whole pipeline waits
-			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
-			IReg[EXE] = IReg[ID];
+			if(!stall_at_EXE){for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
+			IReg[EXE] = IReg[ID];} // skip pulling if instruction is already waitings
 			//sp_registers[EXE][ALU_OUTPUT] = alu(IReg[EXE].opcode, sp_registers[EXE][A], sp_registers[EXE][B], IReg[EXE].immediate, sp_registers[EXE][NPC]);
 			if(!stall_at_ID && IReg[EXE].opcode != NOP)instructions_executed++;
 			switch(IReg[EXE].opcode){
 				case NOP: break;
+				case LWS: sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];break;
+				case SWS: sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][B] + sp_registers[EXE][IMM];break;
+				case ADDS: 
+					int f = get_free_unit(ADDS);
+					if(f != UNDEFINED){ 
+					// if free unit, push
+						exec_units[f].busy = exec_units[f].latency;
+						exec_units[f].instruction = IReg[EXE];
+						exec_units[f].fp_output = sp_registers[EXE][FP_A] + sp_registers[EXE][FP_B]; // expression
+						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+					}// else stall at EXE
+					else stall_at_EXE = true;
+				/*
+				push to unit. 
+				
+				sets busy high & starts countdown. 
+				every exe cycle, decrement all countdowns 
+				if >0 and release instructions that are busy
+				(if busy && 0 pass to memory)
+
+				*/
+				break;
+				case SUBS: 
+					int f = get_free_unit(SUBS);
+					if(f != UNDEFINED){ 
+					// if free unit, push
+						exec_units[f].busy = exec_units[f].latency;
+						exec_units[f].instruction = IReg[EXE];
+						exec_units[f].fp_output = sp_registers[EXE][FP_A] - sp_registers[EXE][FP_B]; 
+						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+					}// else stall at EXE
+					else stall_at_EXE = true;
+				break;
+				case MULTS: 
+					int f = get_free_unit(MULTS);
+					if(f != UNDEFINED){ 
+					// if free unit, push
+						exec_units[f].busy = exec_units[f].latency;
+						exec_units[f].instruction = IReg[EXE];
+						exec_units[f].fp_output = sp_registers[EXE][FP_A] * sp_registers[EXE][FP_B];
+						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+					}// else stall at EXE
+					else stall_at_EXE = true;
+				break;
+				case DIVS: 
+					int f = get_free_unit(DIVS);
+					if(f != UNDEFINED){ 
+					// if free unit, push
+						exec_units[f].busy = exec_units[f].latency;
+						exec_units[f].instruction = IReg[EXE];
+						exec_units[f].fp_output = sp_registers[EXE][FP_A] / sp_registers[EXE][FP_B]; 
+						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+					}// else stall at EXE
+					else stall_at_EXE = true;
+				break;
 				case ADD: 
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][B];
 					//instructions_executed++;
@@ -657,8 +721,8 @@ void sim_pipe_fp::run(unsigned cycles){
 
          // decode: IF/ID
 			// pass registers through if not stalled. if stalled, generate nops NEW
-			if((IReg[MEM].opcode != NOP && IReg[MEM].opcode != SW && IReg[MEM].opcode != EOP) && (IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2)) {
-				if(IReg[MEM].opcode < 7){
+			if((IReg[MEM].opcode != NOP && IReg[MEM].opcode != SWS && IReg[MEM].opcode != SW && IReg[MEM].opcode != EOP) && (IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2)) {
+				if(IReg[MEM].opcode < 7 || IReg[MEM].opcode > 16){//FPP
 				stall_at_ID = true;// no stall on nops: null instructions are all UNDEFINED
 					//stalls++;
 				}
@@ -694,8 +758,20 @@ void sim_pipe_fp::run(unsigned cycles){
 			else if(IReg[ID].opcode == ADD || IReg[ID].opcode == SUB || IReg[ID].opcode == XOR) format = TYPE_R;
 			else if(IReg[ID].opcode == JUMP) format = TYPE_J;
 			else if(IReg[ID].opcode >= LW && IReg[ID].opcode <= JUMP ) format = TYPE_I; // branches, ALU immediates, load/store
+			else if(IReg[ID].opcode == LWS || IReg[ID].opcode == SWS) format = TYPE_F_MEM;
+			else if(IReg[ID].opcode == ADDS ||IReg[ID].opcode == DIVS || IReg[ID].opcode == SUBS ||IReg[ID].opcode == MULTS) format = TYPE_F_MATH;
 			switch(format){
 				case TYPE_NOP: break;
+
+				case TYPE_F_MATH: 
+				sp_registers[ID][FP_A] = fp_registers[IReg[ID].src1];
+				sp_registers[ID][FP_B] = fp_registers[IReg[ID].src2];
+				break;
+
+				case TYPE_F_MEM: break;	// store/load fpA at offset with B/imm
+				sp_registers[ID][FP_A] = fp_registers[IReg[ID].src1];
+				if(IReg[ID].opcode == SW)sp_registers[ID][B] = gp_registers[IReg[ID].src2];
+				sp_registers[ID][IMM] = IReg[ID].immediate;
 				case TYPE_R:
 				//sp_registers[ID][] = IReg[ID].dest;
 				sp_registers[ID][A] = gp_registers[IReg[ID].src1];
@@ -791,6 +867,7 @@ void sim_pipe_fp::reset(){
 
 	stall_at_ID = false;
 	stall_at_MEM = false;
+	stall_at_EXE = false;
 }
 
 //return value of special purpose register

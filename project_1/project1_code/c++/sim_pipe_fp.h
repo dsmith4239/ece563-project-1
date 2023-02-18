@@ -10,19 +10,19 @@ using namespace std;
 #define PROGRAM_SIZE 50
 
 #define UNDEFINED 0xFFFFFFFF //used to initialize the registers
-#define NUM_SP_REGISTERS 9
+#define NUM_SP_REGISTERS 11
 #define NUM_GP_REGISTERS 32 // changed from 7->32 (didnt submit integer with 32 oops)
 #define NUM_FP_REGISTERS 32
 #define NUM_OPCODES 22 // added float opcodes
 #define NUM_STAGES 5
 
-typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD} sp_register_t;
+typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD, FP_A = -1, FP_B = -2} sp_register_t;
 
 typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP, LWS, SWS, ADDS, SUBS, MULTS, DIVS} opcode_t;
 
 typedef enum {IF, ID, EXE, MEM, WB} stage_t;
 
-typedef enum {TYPE_R, TYPE_I, TYPE_J, TYPE_NOP} format_t;
+typedef enum {TYPE_R, TYPE_I, TYPE_J, TYPE_NOP, TYPE_F_MEM, TYPE_F_MATH} format_t;
 
 typedef enum {INTEGER = 0, ADDER, MULTIPLIER, DIVIDER, UNDEF} exe_unit_t;
 
@@ -99,6 +99,7 @@ class sim_pipe_fp{
 	unsigned lastDest; // for RAW hazards
 	bool stall_at_ID;
 	bool stall_at_MEM;
+	bool stall_at_EXE;
 	unsigned mem_op_release_cycle;
 	unsigned local_cycles; // for tracking executions in a run(int)
 
