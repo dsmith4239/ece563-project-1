@@ -18,6 +18,7 @@
         "unordered_map": "cpp",
         "utility": "cpp",
         "vector": "cpp",
-        "new": "cpp"
+        "new": "cpp",
+        "cstring": "cpp"
     }
 }

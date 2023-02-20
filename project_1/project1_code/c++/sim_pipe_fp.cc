@@ -415,7 +415,6 @@ void sim_pipe_fp::load_program(const char *filename, unsigned base_address){
 
 /* simulator */
 
-
 /* body of the simulator */
 void sim_pipe_fp::run(unsigned cycles){ 
     local_cycles = 0;
@@ -557,9 +556,12 @@ void sim_pipe_fp::run(unsigned cycles){
 
 			}
 
-			// clear chosen unit's instruction after result has been pulled out
+			// clear chosen unit's instruction after result has been pulled out. 
+			//after any unit release, check if instruction in EXE is waiting on that type.
+			// if(get_free_unit != undefined), release stall. 
 			if(chosen_unit != UNDEFINED){
 				exec_units.at(chosen_unit).instruction = null_inst;
+				if(get_free_unit(IReg[EXE].opcode)) stall_at_EXE = false; // might need to be ID? FP1
 			}
 
 			// if no units are done & next instruction is arithmetic, NOP
@@ -616,19 +618,32 @@ void sim_pipe_fp::run(unsigned cycles){
 				/*for(int i = 0; i < num_units; i++){
 					if(exec_units.at(i).busy == 0) skip_exe_id_if = true;
 				}*/
-				if(!skip_exe_id_if){
-				for(int i = 0; i < NUM_SP_REGISTERS; i++) {
-					sp_registers[EXE][i] = sp_registers[ID][i];
-					fp_spregs[EXE][i] = fp_spregs[ID][i];
+
+				// check if any unit is busy - do not push eop if so
+				for(int i = 0; i < exec_units.size(); i++){
+					if(exec_units.at(i).busy != 0) pause_eop_exe = true;
 				}
+				if(!skip_exe_id_if && !pause_eop_exe){
+					for(int i = 0; i < NUM_SP_REGISTERS; i++) {
+						sp_registers[EXE][i] = sp_registers[ID][i];
+						fp_spregs[EXE][i] = fp_spregs[ID][i];
+					}
 				IReg[EXE] = IReg[ID];
 				}
 				else{// instruction is about to come out of execution unit: nop this ?
 
 				}
 			} // skip pulling if instruction is already waiting
+
+			// currently stalled - check to release stall
+			if(exe_stall_release_cycle <= current_cycle){	// FP1
+				stall_at_EXE = false;
+			}
+
+
 			//sp_registers[EXE][ALU_OUTPUT] = alu(IReg[EXE].opcode, sp_registers[EXE][A], sp_registers[EXE][B], IReg[EXE].immediate, sp_registers[EXE][NPC]);
 			if(!stall_at_ID && IReg[EXE].opcode != NOP)instructions_executed++;
+			if(!stall_at_EXE){
 			switch(IReg[EXE].opcode){
 				case NOP: break;
 				case LWS: sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];break;
@@ -637,10 +652,28 @@ void sim_pipe_fp::run(unsigned cycles){
 					int f = get_free_unit(ADDS);
 					if(f != UNDEFINED){ 
 					// if free unit, push
+
+						// FP1
+						// there might be a divide or mult waiting for this instruction already:
+						// if the divider's instruction's destination is this 
+						// instruction's destination, stall
+						// stall = true, stall release cycle = current cycle + divider latency + 3
+						for(int i = 0; i < exec_units.size(); i++){
+							if((exec_units.at(i).type == DIVIDER || exec_units.at(i).type == MULTIPLIER) && exec_units.at(i).instruction.dest == IReg[EXE].dest){
+								stall_at_EXE = true;
+								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
+								if(exec_units.at(i).type == DIVIDER) break;	// stop looking if we have the max delay
+							}
+						}
+
+
+
+						if(!stall_at_EXE){
 						exec_units[f].busy = exec_units[f].latency;
 						exec_units[f].instruction = IReg[EXE];
 						exec_units[f].fp_output = fp_spregs[EXE][FP_A] + fp_spregs[EXE][FP_B]; // expression
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+						}
 					}// else stall at EXE
 					else stall_at_EXE = true;
 				/*
@@ -657,10 +690,29 @@ void sim_pipe_fp::run(unsigned cycles){
 					int f = get_free_unit(SUBS);
 					if(f != UNDEFINED){ 
 					// if free unit, push
+
+
+						// there might be a divide or mult waiting for this instruction already:
+						// if the divider's instruction's destination is this 
+						// instruction's destination, stall
+						// stall = true, stall release cycle = current cycle + divider latency + 3
+						for(int i = 0; i < exec_units.size(); i++){
+							if((exec_units.at(i).type == DIVIDER || exec_units.at(i).type == MULTIPLIER) && exec_units.at(i).instruction.dest == IReg[EXE].dest){
+								stall_at_EXE = true;
+								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
+								if(exec_units.at(i).type == DIVIDER) break;	// stop looking if we have the max delay
+							}
+						}
+
+
+
+
+						if(!stall_at_EXE){
 						exec_units[f].busy = exec_units[f].latency;
 						exec_units[f].instruction = IReg[EXE];
 						exec_units[f].fp_output = fp_spregs[EXE][FP_A] - fp_spregs[EXE][FP_B]; 
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+						}
 					}// else stall at EXE
 					else stall_at_EXE = true;
 				break;}
@@ -668,10 +720,25 @@ void sim_pipe_fp::run(unsigned cycles){
 					int f = get_free_unit(MULTS);
 					if(f != UNDEFINED){ 
 					// if free unit, push
+						
+						// there might be a divide waiting for this instruction already:
+						// if the divider's instruction's destination is this 
+						// instruction's destination, stall
+						// stall = true, stall release cycle = current cycle + divider latency + 3
+						for(int i = 0; i < exec_units.size(); i++){
+							if(exec_units.at(i).type == DIVIDER && exec_units.at(i).instruction.dest == IReg[EXE].dest){
+								stall_at_EXE = true;
+								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
+							}
+						}
+						
+						if(!stall_at_EXE){
+						// otherwise
 						exec_units[f].busy = exec_units[f].latency;
 						exec_units[f].instruction = IReg[EXE];
 						exec_units[f].fp_output = fp_spregs[EXE][FP_A] * fp_spregs[EXE][FP_B];
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+						}
 					}// else stall at EXE
 					else stall_at_EXE = true;
 				break;}
@@ -751,7 +818,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				break;
 
 			}
-			
+			}
 			// if [EXE][COND], need to clear pipeline
 
 			// If ALU: ALU out = A op B

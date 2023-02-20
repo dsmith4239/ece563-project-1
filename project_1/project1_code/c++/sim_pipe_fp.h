@@ -102,9 +102,11 @@ class sim_pipe_fp{
 	bool stall_at_ID;
 	bool stall_at_MEM;
 	bool stall_at_EXE;
+	bool pause_eop_exe = false;
 	bool skip_exe_id_if = false;
 	unsigned mem_op_release_cycle;
 	unsigned local_cycles; // for tracking executions in a run(int)
+	unsigned exe_stall_release_cycle = -1; // current cycle + latency of longest unit instruction is currently in 
 
 	// new
 	unsigned num_units;

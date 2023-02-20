@@ -1,4 +1,4 @@
-#include "../sim_pipe_fp.cc"
+#include "../sim_pipe_fp.cc"//"sim_pipe_fp.h"
 #include <iostream>
 #include <cstring>
 #include <stdlib.h>
