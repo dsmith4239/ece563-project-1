@@ -966,7 +966,7 @@ void sim_pipe_fp::set_fp_register(unsigned reg, float value){
 
 
 float sim_pipe_fp::get_IPC(){
-	return get_instructions_executed() / get_clock_cycles(); // please modify
+	return (float)get_instructions_executed() / get_clock_cycles(); // please modify
 }
 
 unsigned sim_pipe_fp::get_instructions_executed(){
