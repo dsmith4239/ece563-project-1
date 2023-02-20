@@ -433,7 +433,10 @@ void sim_pipe_fp::run(unsigned cycles){
 			if(!stall_at_MEM){
 			
 			IReg[WB] = IReg[MEM];
-			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[WB][i] = sp_registers[MEM][i];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) {
+				sp_registers[WB][i] = sp_registers[MEM][i];
+				fp_spregs[WB][i] = fp_spregs[MEM][i];
+			}
 			switch(IReg[WB].opcode){
 				case EOP: return; // exit at EOP (but make sure all other instructions have written back)
 				break;
@@ -451,7 +454,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				break;
 				// if load: regs[rt] = LMD (load memory data) (sp_registers[WB][LMD])
 				case LW: set_int_register(IReg[WB].dest,sp_registers[WB][LMD]);
-				case LWS: set_fp_register(IReg[WB].dest,sp_registers[WB][LMD]);	// FPP added LWS
+				case LWS: set_fp_register(IReg[WB].dest,float_lmd);	// FPP added LWS
 				break;
 			}
 			}
@@ -481,7 +484,7 @@ void sim_pipe_fp::run(unsigned cycles){
 			stall_at_MEM = false;
 			//stalls--;
 			IReg[MEM] = IReg[EXE];
-			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i]; //
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) {sp_registers[MEM][i] = sp_registers[EXE][i];fp_spregs[MEM][i] = fp_spregs[EXE][i];} //
 			// PC = NPC
 			//sp_registers[IF][PC] = sp_registers[MEM][NPC]; // update PC with propagated value or 
 			if(sp_registers[MEM][COND] == 1) {
@@ -502,9 +505,10 @@ void sim_pipe_fp::run(unsigned cycles){
 				break;
 				case SW: write_memory(sp_registers[MEM][ALU_OUTPUT],sp_registers[MEM][A]);
 				break;
-				case LWS: sp_registers[MEM][LMD] = char2int(&data_memory[sp_registers[MEM][ALU_OUTPUT]]);//data_memory[sp_registers[MEM][ALU_OUTPUT]]; LAST THING I CHANGED 
+				case LWS: //sp_registers[MEM][LMD] = char2int(&data_memory[sp_registers[MEM][ALU_OUTPUT]]);//data_memory[sp_registers[MEM][ALU_OUTPUT]]; LAST THING I CHANGED 
+				float_lmd = unsigned_to_float((unsigned)char2int(&data_memory[sp_registers[MEM][ALU_OUTPUT]]));
 				break;
-				case SWS: write_memory(sp_registers[MEM][ALU_OUTPUT],sp_registers[MEM][A]);
+				case SWS: write_memory(sp_registers[MEM][ALU_OUTPUT],float2unsigned_local(fp_registers[sp_registers[MEM][A]]));	// store that reg in mem
 				break;
 			}
 		}
@@ -517,7 +521,7 @@ void sim_pipe_fp::run(unsigned cycles){
 			// this might cause issues if we try to pass LW instruction in if exec unit is done same cycle
 			// prioritize exec unit over L/S if so
 
-			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+			for(int i = 0; i < NUM_SP_REGISTERS; i++) {sp_registers[MEM][i] = sp_registers[EXE][i];fp_spregs[MEM][i] = fp_spregs[EXE][i];}
 			mem_op_release_cycle = get_clock_cycles() + data_memory_latency;//+ 2;
 			stall_at_MEM = true;
 			//stalls++;
@@ -528,22 +532,20 @@ void sim_pipe_fp::run(unsigned cycles){
 			// check if current unit is not busy & opcode is not nop
 			// store in IReg[MEM]
 			// check all other instructions to see if there is another instruction that's done & is older. replace if necessary
-			/*
-			IReg[MEM] = IReg[EXE];
-			for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
-			*/
+			
 			unsigned earliest_cycle = UNDEFINED;
 			unsigned chosen_unit = UNDEFINED;
 			for(int i = 0; i < exec_units.size(); i++){
 				execution_unit_t current_unit = exec_units.at(i);
 				if(current_unit.busy == 0 && current_unit.instruction.opcode != NOP && current_unit.cycle_instruction_entered_unit < earliest_cycle){
-					for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+					for(int i = 0; i < NUM_SP_REGISTERS; i++) {sp_registers[MEM][i] = sp_registers[EXE][i];fp_spregs[MEM][i] = fp_spregs[EXE][i];}
 					// copy sp regs to mem
 					// get instruction and result from this unit
 					IReg[MEM] = current_unit.instruction;
 					if(current_unit.type) sp_registers[MEM][ALU_OUTPUT] = current_unit.fp_output;	// integer type == 0, all others are float types
 					else sp_registers[MEM][ALU_OUTPUT] = current_unit.int_output;
 					chosen_unit = i; // this unit is the one getting pulled from exe
+					skip_exe_id_if = false;
 				}
 
 			}
@@ -553,6 +555,10 @@ void sim_pipe_fp::run(unsigned cycles){
 			if(chosen_unit == UNDEFINED){
 				for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = UNDEFINED;
 				IReg[MEM] = null_inst;
+				for(int i = 0; i < num_units; i++){
+					if(exec_units.at(i).busy == 1) skip_exe_id_if = true; 	// instruction is coming out of unit next turn 
+																			// don't pass instruction at exe into mem
+				}
 				if(
 					//IReg[EXE].opcode != ADD &&
 					IReg[EXE].opcode != ADDS &&
@@ -561,10 +567,14 @@ void sim_pipe_fp::run(unsigned cycles){
 					//IReg[EXE].opcode != SUBI &&
 					IReg[EXE].opcode != SUBS &&
 					IReg[EXE].opcode != MULTS &&
-					IReg[EXE].opcode != DIVS					
+					IReg[EXE].opcode != DIVS &&	// if the instruction is ready to be passed into mem and an instruction is not coming out next cycle				
+					!skip_exe_id_if
 				){
 					IReg[MEM] = IReg[EXE];
-					for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = sp_registers[EXE][i];
+					for(int i = 0; i < NUM_SP_REGISTERS; i++) {
+						{sp_registers[MEM][i] = sp_registers[EXE][i];
+						fp_spregs[MEM][i] = fp_spregs[EXE][i];}
+					}
 				}
 			}
 
@@ -589,8 +599,22 @@ void sim_pipe_fp::run(unsigned cycles){
         // execute: ID/EX
 			//decrement_units_busy_time();
 			if(!stall_at_MEM){	// only execute lower stages if memory is not busy - otherwise, whole pipeline waits
-			if(!stall_at_EXE){for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[EXE][i] = sp_registers[ID][i];
-			IReg[EXE] = IReg[ID];} // skip pulling if instruction is already waitings
+			if(!stall_at_EXE){
+				// if an instruction is about to come out of unit, stall for one cycle
+				/*for(int i = 0; i < num_units; i++){
+					if(exec_units.at(i).busy == 0) skip_exe_id_if = true;
+				}*/
+				if(!skip_exe_id_if){
+				for(int i = 0; i < NUM_SP_REGISTERS; i++) {
+					sp_registers[EXE][i] = sp_registers[ID][i];
+					fp_spregs[EXE][i] = fp_spregs[ID][i];
+				}
+				IReg[EXE] = IReg[ID];
+				}
+				else{// instruction is about to come out of execution unit: nop this ?
+
+				}
+			} // skip pulling if instruction is already waiting
 			//sp_registers[EXE][ALU_OUTPUT] = alu(IReg[EXE].opcode, sp_registers[EXE][A], sp_registers[EXE][B], IReg[EXE].immediate, sp_registers[EXE][NPC]);
 			if(!stall_at_ID && IReg[EXE].opcode != NOP)instructions_executed++;
 			switch(IReg[EXE].opcode){
@@ -603,7 +627,7 @@ void sim_pipe_fp::run(unsigned cycles){
 					// if free unit, push
 						exec_units[f].busy = exec_units[f].latency;
 						exec_units[f].instruction = IReg[EXE];
-						exec_units[f].fp_output = sp_registers[EXE][FP_A] + sp_registers[EXE][FP_B]; // expression
+						exec_units[f].fp_output = fp_spregs[EXE][FP_A] + fp_spregs[EXE][FP_B]; // expression
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
 					}// else stall at EXE
 					else stall_at_EXE = true;
@@ -623,7 +647,7 @@ void sim_pipe_fp::run(unsigned cycles){
 					// if free unit, push
 						exec_units[f].busy = exec_units[f].latency;
 						exec_units[f].instruction = IReg[EXE];
-						exec_units[f].fp_output = sp_registers[EXE][FP_A] - sp_registers[EXE][FP_B]; 
+						exec_units[f].fp_output = fp_spregs[EXE][FP_A] - fp_spregs[EXE][FP_B]; 
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
 					}// else stall at EXE
 					else stall_at_EXE = true;
@@ -634,7 +658,7 @@ void sim_pipe_fp::run(unsigned cycles){
 					// if free unit, push
 						exec_units[f].busy = exec_units[f].latency;
 						exec_units[f].instruction = IReg[EXE];
-						exec_units[f].fp_output = sp_registers[EXE][FP_A] * sp_registers[EXE][FP_B];
+						exec_units[f].fp_output = fp_spregs[EXE][FP_A] * fp_spregs[EXE][FP_B];
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
 					}// else stall at EXE
 					else stall_at_EXE = true;
@@ -645,7 +669,7 @@ void sim_pipe_fp::run(unsigned cycles){
 					// if free unit, push
 						exec_units[f].busy = exec_units[f].latency;
 						exec_units[f].instruction = IReg[EXE];
-						exec_units[f].fp_output = sp_registers[EXE][FP_A] / sp_registers[EXE][FP_B]; 
+						exec_units[f].fp_output = fp_spregs[EXE][FP_A] / fp_spregs[EXE][FP_B]; 
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
 					}// else stall at EXE
 					else stall_at_EXE = true;
@@ -732,7 +756,7 @@ void sim_pipe_fp::run(unsigned cycles){
 
 
 
-
+		if(!stall_at_EXE){ // only execute these stages if we are not stalled at exe (waiting for exec unit)
          // decode: IF/ID
 			// pass registers through if not stalled. if stalled, generate nops NEW
 			if((IReg[MEM].opcode != NOP && IReg[MEM].opcode != SWS && IReg[MEM].opcode != SW && IReg[MEM].opcode != EOP) && (IReg[MEM].dest == IReg[IF].src1 || IReg[MEM].dest == IReg[IF].src2)) {
@@ -762,7 +786,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				IReg[ID] = null_inst;
 			}else{
 				// normal decode
-			for(int i = 1; i < NUM_SP_REGISTERS; i++) sp_registers[ID][i] = sp_registers[IF][i];
+			for(int i = 1; i < NUM_SP_REGISTERS; i++) {sp_registers[ID][i] = sp_registers[IF][i];fp_spregs[ID][i] = fp_spregs[IF][i];}
 			if(IReg[IF].opcode != 0xbaadf00d) IReg[ID] = IReg[IF];
 			
 			
@@ -778,14 +802,15 @@ void sim_pipe_fp::run(unsigned cycles){
 				case TYPE_NOP: break;
 
 				case TYPE_F_MATH: 
-				sp_registers[ID][FP_A] = fp_registers[IReg[ID].src1];
-				sp_registers[ID][FP_B] = fp_registers[IReg[ID].src2];
+				fp_spregs[ID][FP_A] = fp_registers[IReg[ID].src1];
+				fp_spregs[ID][FP_B] = fp_registers[IReg[ID].src2];
 				break;
 
-				case TYPE_F_MEM: break;	// store/load fpA at offset with B/imm
-				sp_registers[ID][FP_A] = fp_registers[IReg[ID].src1];
+				case TYPE_F_MEM:	// store/load fpA at offset with B/imm
+				sp_registers[ID][A] = gp_registers[IReg[ID].src1]; // use Rx
 				if(IReg[ID].opcode == SW)sp_registers[ID][B] = gp_registers[IReg[ID].src2];
 				sp_registers[ID][IMM] = IReg[ID].immediate;
+				break;
 				case TYPE_R:
 				//sp_registers[ID][] = IReg[ID].dest;
 				sp_registers[ID][A] = gp_registers[IReg[ID].src1];
@@ -829,7 +854,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				sp_registers[IF][PC]+=4;
 				if(IReg[IF].immediate == 0xbaadf00d) IReg[IF].immediate = UNDEFINED;
 				for(int i = 2; i < NUM_SP_REGISTERS; i++) sp_registers[IF][i] = UNDEFINED;
-
+				for(int i = 0; i < NUM_SP_REGISTERS; i++) fp_spregs[IF][i] = UNDEFINED;
 				// RAW: if new instruction src1 or src2 wants to access value of last destination register, stall				
 				if((lastDest == IReg[IF].src1 || lastDest == IReg[IF].src2) && lastDest != UNDEFINED && lastDest != 0xbaadf00d) {
 					stall_at_ID = true;
@@ -850,7 +875,7 @@ void sim_pipe_fp::run(unsigned cycles){
 	if(data_memory_latency == 0) stalls = 0;
 }
 
-
+}
 
 	
 //reset the state of the sim_pipe_fpulator
@@ -870,6 +895,7 @@ void sim_pipe_fp::reset(){
 	for(int i = 0; i < NUM_STAGES; i++){
 		for(int j = 0; j < NUM_SP_REGISTERS; j++){
 			sp_registers[i][j] = UNDEFINED;
+			fp_spregs[i][j] = UNDEFINED;
 		}
 	}
 	//sp_registers[IF][PC] = instr_base_address;

@@ -16,7 +16,7 @@ using namespace std;
 #define NUM_OPCODES 22 // added float opcodes
 #define NUM_STAGES 5
 
-typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD, FP_A = -1, FP_B = -2} sp_register_t;
+typedef enum {PC = 0, NPC, IR, A, B, IMM, COND, ALU_OUTPUT, LMD, FP_A, FP_B} sp_register_t; // changed from -1 and -2
 
 typedef enum {LW, SW, ADD, ADDI, SUB, SUBI, XOR, BEQZ, BNEZ, BLTZ, BGTZ, BLEZ, BGEZ, JUMP, EOP, NOP, LWS, SWS, ADDS, SUBS, MULTS, DIVS} opcode_t;
 
@@ -68,9 +68,11 @@ class sim_pipe_fp{
 															 // other registers correspond to stage they feed into:
 															 // stage between EX and MEM is sp_registers[MEM]
 															 // stage between ID/EX is sp_registers[EX]
-															 // if a SPR is unused by an instruction, it should be set to undefined
+		float float_lmd;													 // if a SPR is unused by an instruction, it should be set to undefined
+		float float_sval;
 
 		float fp_registers[NUM_FP_REGISTERS];
+		float fp_spregs[NUM_STAGES][NUM_SP_REGISTERS];
 
 		vector<execution_unit_t> exec_units; // vector so # is configurable	
 
@@ -100,6 +102,7 @@ class sim_pipe_fp{
 	bool stall_at_ID;
 	bool stall_at_MEM;
 	bool stall_at_EXE;
+	bool skip_exe_id_if = false;
 	unsigned mem_op_release_cycle;
 	unsigned local_cycles; // for tracking executions in a run(int)
 
