@@ -400,7 +400,7 @@ void sim_pipe_fp::load_program(const char *filename, unsigned base_address){
             instr.opcode == BGEZ || instr.opcode == BLEZ ||
             instr.opcode == JUMP
 	 ){
-		instr_memory[i].immediate = (labels[instr.label] - i - 1) << 2;
+		instr_memory[i].immediate = (labels[instr.label] - i - 1)<< 2;//  instructions are sequential in an array - should not be multiplied by 4
 	}
         i++;
    }
@@ -456,11 +456,18 @@ void sim_pipe_fp::run(unsigned cycles){
 				case LW: set_int_register(IReg[WB].dest,sp_registers[WB][LMD]);
 				case LWS: set_fp_register(IReg[WB].dest,float_lmd);	// FPP added LWS
 				break;
+				case ADDS: 
+				case SUBS: 
+				case MULTS: 
+				case DIVS: set_fp_register(IReg[WB].dest,fp_spregs[WB][ALU_OUTPUT]); break;
 			}
 			}
 			else{ 
 				IReg[WB] = null_inst;
-				for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[WB][i] = UNDEFINED;
+				for(int i = 0; i < NUM_SP_REGISTERS; i++){
+				fp_spregs[WB][i] = UNDEFINED;
+				sp_registers[WB][i] = UNDEFINED;
+				}
 			}
 			//instructions_executed++;
 
@@ -508,7 +515,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				case LWS: //sp_registers[MEM][LMD] = char2int(&data_memory[sp_registers[MEM][ALU_OUTPUT]]);//data_memory[sp_registers[MEM][ALU_OUTPUT]]; LAST THING I CHANGED 
 				float_lmd = unsigned_to_float((unsigned)char2int(&data_memory[sp_registers[MEM][ALU_OUTPUT]]));
 				break;
-				case SWS: write_memory(sp_registers[MEM][ALU_OUTPUT],float2unsigned_local(fp_registers[sp_registers[MEM][A]]));	// store that reg in mem
+				case SWS: write_memory(sp_registers[MEM][ALU_OUTPUT],float2unsigned_local(fp_spregs[MEM][A]));	// store that reg in mem
 				break;
 			}
 		}
@@ -542,12 +549,17 @@ void sim_pipe_fp::run(unsigned cycles){
 					// copy sp regs to mem
 					// get instruction and result from this unit
 					IReg[MEM] = current_unit.instruction;
-					if(current_unit.type) sp_registers[MEM][ALU_OUTPUT] = current_unit.fp_output;	// integer type == 0, all others are float types
+					if(current_unit.type) fp_spregs[MEM][ALU_OUTPUT] = current_unit.fp_output;	// integer type == 0, all others are float types
 					else sp_registers[MEM][ALU_OUTPUT] = current_unit.int_output;
 					chosen_unit = i; // this unit is the one getting pulled from exe
 					skip_exe_id_if = false;
 				}
 
+			}
+
+			// clear chosen unit's instruction after result has been pulled out
+			if(chosen_unit != UNDEFINED){
+				exec_units.at(chosen_unit).instruction = null_inst;
 			}
 
 			// if no units are done & next instruction is arithmetic, NOP
@@ -708,7 +720,7 @@ void sim_pipe_fp::run(unsigned cycles){
 					//instructions_executed++;
 				break;
 				case BNEZ:
-					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2); //produces wrong results with << 2?
+					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM]); //<< 2); //produces wrong results with << 2?
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
 					//instructions_executed++;
 				break;
@@ -784,8 +796,8 @@ void sim_pipe_fp::run(unsigned cycles){
 			if(stall_at_ID){
 				// stall behavior: generate nops
 				IReg[ID] = null_inst;
-			}else{
-				// normal decode
+			}else{ // normal decode
+				
 			for(int i = 1; i < NUM_SP_REGISTERS; i++) {sp_registers[ID][i] = sp_registers[IF][i];fp_spregs[ID][i] = fp_spregs[IF][i];}
 			if(IReg[IF].opcode != 0xbaadf00d) IReg[ID] = IReg[IF];
 			
@@ -807,9 +819,16 @@ void sim_pipe_fp::run(unsigned cycles){
 				break;
 
 				case TYPE_F_MEM:	// store/load fpA at offset with B/imm
-				sp_registers[ID][A] = gp_registers[IReg[ID].src1]; // use Rx
-				if(IReg[ID].opcode == SW)sp_registers[ID][B] = gp_registers[IReg[ID].src2];
+				sp_registers[ID][A] = gp_registers[IReg[ID].src1]; // store: put reg at src1 into mem
+				//if(IReg[ID].opcode == SWS)
 				sp_registers[ID][IMM] = IReg[ID].immediate;
+				if(IReg[ID].opcode == SWS){
+					fp_spregs[ID][A] = fp_registers[IReg[ID].src1];
+					// offset from gp registers[src2] into sp registers id b
+					sp_registers[ID][B] = gp_registers[IReg[ID].src2];
+					// immediate
+					
+				}
 				break;
 				case TYPE_R:
 				//sp_registers[ID][] = IReg[ID].dest;
@@ -821,13 +840,14 @@ void sim_pipe_fp::run(unsigned cycles){
 				sp_registers[ID][A] = gp_registers[IReg[ID].src1];
 				if(IReg[ID].opcode == SW)sp_registers[ID][B] = gp_registers[IReg[ID].src2];
 				sp_registers[ID][IMM] = IReg[ID].immediate;
+				if(IReg[ID].opcode == BNEZ) sp_registers[ID][IMM] += 16;
 				break;
 				case TYPE_J:
 				sp_registers[ID][IMM] = IReg[ID].immediate;
 				break;
 			}
 			//if(IReg[ID].opcode != SW && IReg[ID].opcode != LW) sp_registers[ID][B] = gp_registers[IReg[ID].src2]; // do not fill if instruction is LW/SW
-			sp_registers[ID][IMM] = IReg[ID].immediate;
+			if(IReg[ID].opcode != BNEZ) sp_registers[ID][IMM] = IReg[ID].immediate;
 			}
 
 
@@ -845,7 +865,9 @@ void sim_pipe_fp::run(unsigned cycles){
 
 
          // fetch: next instruction (initialize all other registers in IF to UNDEFINED except PC) 
-			if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 4;
+			if(sp_registers[MEM][COND] == 1) {
+				sp_registers[IF][PC] = sp_registers[MEM][PC] - 4;
+			}
 			sp_registers[IF][NPC] = sp_registers[IF][PC] + 4;
 			if(!stall_at_ID){ // 2 blocks so if we come out of stall we can advance in the same CC
 				// if(sp_registers[MEM][COND] == 1) sp_registers[IF][PC] = sp_registers[MEM][PC] - 1; // overwrite with new PC if branch taken in MEM stage
@@ -869,7 +891,16 @@ void sim_pipe_fp::run(unsigned cycles){
 			//sp_registers[IF][NPC] = sp_registers[IF][PC] + 4; // might need to be +1?
 		}
 
-    } // exits once current_cycle > cycles
+    } else{
+		// exe is stalled at memory: nop
+		/*IReg[EXE] = null_inst;
+		for(int j = 0; j < NUM_SP_REGISTERS; j++){
+			sp_registers[EXE][j] = UNDEFINED;
+			fp_spregs[EXE][j] = UNDEFINED;
+		}*/
+	} 
+	
+	// exits once current_cycle > cycles
 	// once program has run to completion:
 	
 	if(data_memory_latency == 0) stalls = 0;
