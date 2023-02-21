@@ -424,8 +424,8 @@ void sim_pipe_fp::run(unsigned cycles){
 		// during each cycle:
 		decrement_units_busy_time(); // lower busy times
         current_cycle++;        
-		if(stall_at_ID || stall_at_MEM || skip_exe_id_if || stall_at_EXE) {
-			//stalls++;
+		if(stall_at_ID || stall_at_MEM || skip_exe_id_if) {
+			stalls++;
 		}
 		//if(stall_at_MEM) stalls++; //NEW 5
 
@@ -574,7 +574,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = UNDEFINED;
 				IReg[MEM] = null_inst;
 				for(int i = 0; i < num_units; i++){
-					if(exec_units.at(i).busy == 1) {skip_exe_id_if = true;stalls++;} 	// instruction is coming out of unit next turn 
+					if(exec_units.at(i).busy == 1) {skip_exe_id_if = true;} 	// instruction is coming out of unit next turn 
 																			// don't pass instruction at exe into mem
 				}
 				if(
@@ -621,7 +621,7 @@ void sim_pipe_fp::run(unsigned cycles){
 			// check for stalls (if every unit is empty, go ahead)
 			stall_at_EXE = false;
 			for(int i = 0; i < exec_units.size(); i++){
-					if(exec_units.at(i).busy != 0) {stall_at_EXE = true;stalls++;}
+					if(exec_units.at(i).busy != 0) {stall_at_EXE = true;}
 				}
 			//if(get_free_unit(IReg[ID].opcode) != UNDEFINED) stall_at_EXE = false;
 			//else stall_at_EXE = tre;
@@ -679,7 +679,7 @@ void sim_pipe_fp::run(unsigned cycles){
 						for(int i = 0; i < exec_units.size(); i++){
 							if((exec_units.at(i).type == DIVIDER || exec_units.at(i).type == MULTIPLIER) && exec_units.at(i).instruction.dest == IReg[EXE].dest){
 								stall_at_EXE = true;
-								stalls++;
+								//stalls++;
 								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
 								if(exec_units.at(i).type == DIVIDER) break;	// stop looking if we have the max delay
 							}
@@ -722,7 +722,7 @@ void sim_pipe_fp::run(unsigned cycles){
 						for(int i = 0; i < exec_units.size(); i++){
 							if((exec_units.at(i).type == DIVIDER || exec_units.at(i).type == MULTIPLIER) && exec_units.at(i).instruction.dest == IReg[EXE].dest){
 								stall_at_EXE = true;
-								stalls++;
+								//stalls++;
 								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
 								if(exec_units.at(i).type == DIVIDER) break;	// stop looking if we have the max delay
 							}
@@ -756,7 +756,7 @@ void sim_pipe_fp::run(unsigned cycles){
 						for(int i = 0; i < exec_units.size(); i++){
 							if(exec_units.at(i).type == DIVIDER && exec_units.at(i).instruction.dest == IReg[EXE].dest){
 								stall_at_EXE = true;
-								stalls++;
+								//stalls++;
 								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
 							}
 						}
@@ -1071,7 +1071,7 @@ float sim_pipe_fp::get_IPC(){
 }
 
 unsigned sim_pipe_fp::get_instructions_executed(){
-	return instructions_executed; // please modify
+	return instructions_executed + 1; // please modify
 }
 
 unsigned sim_pipe_fp::get_clock_cycles(){
