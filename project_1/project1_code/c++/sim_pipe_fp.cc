@@ -424,7 +424,9 @@ void sim_pipe_fp::run(unsigned cycles){
 		// during each cycle:
 		decrement_units_busy_time(); // lower busy times
         current_cycle++;        
-		if(stall_at_ID || stall_at_MEM) stalls++;
+		if(stall_at_ID || stall_at_MEM || skip_exe_id_if || stall_at_EXE) {
+			//stalls++;
+		}
 		//if(stall_at_MEM) stalls++; //NEW 5
 
 
@@ -468,7 +470,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				sp_registers[WB][i] = UNDEFINED;
 				}
 			}
-			//instructions_executed++;
+		
 
 
 
@@ -552,6 +554,8 @@ void sim_pipe_fp::run(unsigned cycles){
 					else sp_registers[MEM][ALU_OUTPUT] = current_unit.int_output;
 					chosen_unit = i; // this unit is the one getting pulled from exe
 					skip_exe_id_if = false;
+					IReg[EXE] = null_inst;
+					instructions_executed++;
 				}
 
 			}
@@ -561,7 +565,7 @@ void sim_pipe_fp::run(unsigned cycles){
 			// if(get_free_unit != undefined), release stall. 
 			if(chosen_unit != UNDEFINED){
 				exec_units.at(chosen_unit).instruction = null_inst;
-				if(get_free_unit(IReg[EXE].opcode)) stall_at_EXE = false; // might need to be ID? FP1
+				if(IReg[EXE].opcode != NOP && get_free_unit(IReg[EXE].opcode)) stall_at_EXE = false; // might need to be ID? FP1
 			}
 
 			// if no units are done & next instruction is arithmetic, NOP
@@ -570,7 +574,7 @@ void sim_pipe_fp::run(unsigned cycles){
 				for(int i = 0; i < NUM_SP_REGISTERS; i++) sp_registers[MEM][i] = UNDEFINED;
 				IReg[MEM] = null_inst;
 				for(int i = 0; i < num_units; i++){
-					if(exec_units.at(i).busy == 1) skip_exe_id_if = true; 	// instruction is coming out of unit next turn 
+					if(exec_units.at(i).busy == 1) {skip_exe_id_if = true;stalls++;} 	// instruction is coming out of unit next turn 
 																			// don't pass instruction at exe into mem
 				}
 				if(
@@ -613,6 +617,15 @@ void sim_pipe_fp::run(unsigned cycles){
         // execute: ID/EX
 			//decrement_units_busy_time();
 			if(!stall_at_MEM){	// only execute lower stages if memory is not busy - otherwise, whole pipeline waits
+			
+			// check for stalls (if every unit is empty, go ahead)
+			stall_at_EXE = false;
+			for(int i = 0; i < exec_units.size(); i++){
+					if(exec_units.at(i).busy != 0) {stall_at_EXE = true;stalls++;}
+				}
+			//if(get_free_unit(IReg[ID].opcode) != UNDEFINED) stall_at_EXE = false;
+			//else stall_at_EXE = tre;
+			
 			if(!stall_at_EXE){
 				// if an instruction is about to come out of unit, stall for one cycle
 				/*for(int i = 0; i < num_units; i++){
@@ -629,6 +642,11 @@ void sim_pipe_fp::run(unsigned cycles){
 						fp_spregs[EXE][i] = fp_spregs[ID][i];
 					}
 				IReg[EXE] = IReg[ID];
+
+				// just passed instruction in: look at next ID (currently in IF)
+				// to see if we need to stall 
+
+
 				}
 				else{// instruction is about to come out of execution unit: nop this ?
 
@@ -642,7 +660,7 @@ void sim_pipe_fp::run(unsigned cycles){
 
 
 			//sp_registers[EXE][ALU_OUTPUT] = alu(IReg[EXE].opcode, sp_registers[EXE][A], sp_registers[EXE][B], IReg[EXE].immediate, sp_registers[EXE][NPC]);
-			if(!stall_at_ID && IReg[EXE].opcode != NOP)instructions_executed++;
+			//if(!stall_at_ID && IReg[EXE].opcode != NOP)instructions_executed++;
 			if(!stall_at_EXE){
 			switch(IReg[EXE].opcode){
 				case NOP: break;
@@ -661,6 +679,7 @@ void sim_pipe_fp::run(unsigned cycles){
 						for(int i = 0; i < exec_units.size(); i++){
 							if((exec_units.at(i).type == DIVIDER || exec_units.at(i).type == MULTIPLIER) && exec_units.at(i).instruction.dest == IReg[EXE].dest){
 								stall_at_EXE = true;
+								stalls++;
 								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
 								if(exec_units.at(i).type == DIVIDER) break;	// stop looking if we have the max delay
 							}
@@ -673,9 +692,13 @@ void sim_pipe_fp::run(unsigned cycles){
 						exec_units[f].instruction = IReg[EXE];
 						exec_units[f].fp_output = fp_spregs[EXE][FP_A] + fp_spregs[EXE][FP_B]; // expression
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+
+						// pull instruction out of IReg
+						//IReg[EXE] = null_inst;
+
 						}
 					}// else stall at EXE
-					else stall_at_EXE = true;
+					else {stall_at_EXE = true;stalls++;}
 				/*
 				push to unit. 
 				
@@ -699,6 +722,7 @@ void sim_pipe_fp::run(unsigned cycles){
 						for(int i = 0; i < exec_units.size(); i++){
 							if((exec_units.at(i).type == DIVIDER || exec_units.at(i).type == MULTIPLIER) && exec_units.at(i).instruction.dest == IReg[EXE].dest){
 								stall_at_EXE = true;
+								stalls++;
 								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
 								if(exec_units.at(i).type == DIVIDER) break;	// stop looking if we have the max delay
 							}
@@ -712,9 +736,13 @@ void sim_pipe_fp::run(unsigned cycles){
 						exec_units[f].instruction = IReg[EXE];
 						exec_units[f].fp_output = fp_spregs[EXE][FP_A] - fp_spregs[EXE][FP_B]; 
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+
+						// pull instruction out of IReg
+						//IReg[EXE] = null_inst;
+
 						}
 					}// else stall at EXE
-					else stall_at_EXE = true;
+					else {stall_at_EXE = true;stalls++;}
 				break;}
 				case MULTS: {
 					int f = get_free_unit(MULTS);
@@ -728,6 +756,7 @@ void sim_pipe_fp::run(unsigned cycles){
 						for(int i = 0; i < exec_units.size(); i++){
 							if(exec_units.at(i).type == DIVIDER && exec_units.at(i).instruction.dest == IReg[EXE].dest){
 								stall_at_EXE = true;
+								stalls++;
 								exe_stall_release_cycle = get_clock_cycles() + exec_units.at(i).latency + 3;
 							}
 						}
@@ -738,9 +767,12 @@ void sim_pipe_fp::run(unsigned cycles){
 						exec_units[f].instruction = IReg[EXE];
 						exec_units[f].fp_output = fp_spregs[EXE][FP_A] * fp_spregs[EXE][FP_B];
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+
+						// pull instruction out of IReg
+						//IReg[EXE] = null_inst;
 						}
 					}// else stall at EXE
-					else stall_at_EXE = true;
+					else {stall_at_EXE = true;stalls++;}
 				break;}
 				case DIVS: {
 					int f = get_free_unit(DIVS);
@@ -750,71 +782,73 @@ void sim_pipe_fp::run(unsigned cycles){
 						exec_units[f].instruction = IReg[EXE];
 						exec_units[f].fp_output = fp_spregs[EXE][FP_A] / fp_spregs[EXE][FP_B]; 
 						exec_units[f].cycle_instruction_entered_unit = current_cycle;
+						// pull instruction out of IReg
+						//IReg[EXE] = null_inst;
 					}// else stall at EXE
-					else stall_at_EXE = true;
+					else {stall_at_EXE = true;stalls++;}
 				break;}
 				case ADD: 
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][B];
-					//instructions_executed++;
+					
 				break;
 				case SUB:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][B];
-					//instructions_executed++;
+					
 				break;
 				case ADDI:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] + sp_registers[EXE][IMM];
-					//instructions_executed++;
+					
 				break;
 				case SUBI:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][A] - sp_registers[EXE][IMM];
-					//instructions_executed++;
+					
 				break;
 				case LW:
 					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] + sp_registers[EXE][IMM];
-					//instructions_executed++;
+					
 				break;
 				case SW:
 					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][B] + sp_registers[EXE][IMM];
-					//instructions_executed++;
+					
 				break;
 				case XOR:
 					sp_registers[EXE][ALU_OUTPUT] =  sp_registers[EXE][A] ^ sp_registers[EXE][B];
-					//instructions_executed++;
+					
 				break;
 				case BEQZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] == 0);
-					//instructions_executed++;
+					
 				break;
 				case BNEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM]); //<< 2); //produces wrong results with << 2?
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] != 0);
-					//instructions_executed++;
+					
 				break;
 				case BLTZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] < 0);
-					//instructions_executed++;
+				
 				break;
 				case BGTZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] > 0);
-					//instructions_executed++;
+					
 				break;
 				case BLEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] <= 0);
-					//instructions_executed++;
+					
 				break;
 				case BGEZ:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (sp_registers[EXE][A] >= 0);
-					//instructions_executed++;
+					
 				break;
 				case JUMP:
 					sp_registers[EXE][ALU_OUTPUT] = sp_registers[EXE][NPC] + (sp_registers[EXE][IMM] << 2);
 					sp_registers[EXE][COND] = (true);
-					//instructions_executed++;
+					
 				break;
 
 			}
@@ -970,7 +1004,7 @@ void sim_pipe_fp::run(unsigned cycles){
 	// exits once current_cycle > cycles
 	// once program has run to completion:
 	
-	if(data_memory_latency == 0) stalls = 0;
+	//if(data_memory_latency == 0) stalls = 0;
 }
 
 }
